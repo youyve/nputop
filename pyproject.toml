@@ -3,11 +3,11 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nvitop"
+name = "nputop"
 description = "An interactive NVIDIA-GPU process viewer and beyond, the one-stop solution for GPU process management."
 readme = "README.md"
 requires-python = ">= 3.7"
-authors = [{ name = "Xuehai Pan", email = "XuehaiPan@pku.edu.cn" }]
+authors = [{ name = "Lianzhong You", email = "youlianzhong@gml.ac.cn" }]
 license = { text = "Apache License, Version 2.0 (Apache-2.0) & GNU General Public License, Version 3 (GPL-3.0)" }
 keywords = [
     "nvidia",
@@ -45,7 +45,7 @@ classifiers = [
     "Topic :: Utilities",
 ]
 dependencies = [
-    # Sync with nvitop/version.py and requirements.txt
+    # Sync with nputop/version.py and requirements.txt
     "nvidia-ml-py >= 11.450.51, < 12.561.0a0",
     "psutil >= 5.6.6",
     "cachetools >= 1.0.1",
@@ -56,17 +56,17 @@ dependencies = [
 dynamic = ["version", "optional-dependencies"]
 
 [project.scripts]
-nvitop = "nvitop.cli:main"
-nvisel = "nvitop.select:main"
+nputop = "nputop.cli:main"
+nvisel = "nputop.select:main"
 
 [project.urls]
-Homepage = "https://github.com/XuehaiPan/nvitop"
-Repository = "https://github.com/XuehaiPan/nvitop"
-Documentation = "https://nvitop.readthedocs.io"
-"Bug Report" = "https://github.com/XuehaiPan/nvitop/issues"
+Homepage = "https://github.com/youyve/nputop"
+Repository = "https://github.com/youyve/nputop"
+Documentation = "https://nputop.readthedocs.io"
+"Bug Report" = "https://github.com/youyve/nputop/issues"
 
 [tool.setuptools.packages.find]
-include = ["nvitop", "nvitop.*"]
+include = ["nputop", "nputop.*"]
 
 [tool.black]
 line-length = 100
@@ -76,8 +76,8 @@ target-version = ["py37"]
 [tool.isort]
 atomic = true
 profile = "black"
-src_paths = ["nvitop", "nvitop-exporter/nvitop_exporter"]
-known_first_party = ["nvitop", "nvitop_exporter"]
+src_paths = ["nputop", "nputop-exporter/nputop_exporter"]
+known_first_party = ["nputop", "nputop_exporter"]
 indent = 4
 line_length = 100
 lines_after_imports = 2
@@ -86,8 +86,8 @@ multi_line_output = 3
 [tool.mypy]
 # Sync with requires-python
 python_version = "3.8"  # appease mypy for syntax errors in numpy stubs
-mypy_path = [".", "nvitop-exporter"]
-exclude = ["nvitop-exporter/setup.py"]
+mypy_path = [".", "nputop-exporter"]
+exclude = ["nputop-exporter/setup.py"]
 pretty = true
 show_error_codes = true
 show_error_context = true
@@ -107,7 +107,7 @@ warn_unused_configs = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = ['nvitop.callbacks.*', 'nvitop.gui.*']
+module = ['nputop.callbacks.*', 'nputop.gui.*']
 ignore_errors = true
 
 [tool.codespell]
@@ -118,7 +118,7 @@ ignore-words = "docs/source/spelling_wordlist.txt"
 target-version = "py37"
 line-length = 100
 output-format = "full"
-src = ["nvitop", "nvitop-exporter/nvitop_exporter"]
+src = ["nputop", "nputop-exporter/nputop_exporter"]
 
 [tool.ruff.lint]
 select = [
@@ -181,14 +181,14 @@ ignore = [
     "D",       # pydocstyle
     "ANN",     # flake8-annotations
 ]
-"nvitop/api/lib*.py" = [
+"nputop/api/lib*.py" = [
     "N",       # pep8-naming
 ]
-"nvitop/callbacks/*.py" = [
+"nputop/callbacks/*.py" = [
     "D",       # pydocstyle
     "ANN",     # flake8-annotations
 ]
-"nvitop/gui/**/*.py" = [
+"nputop/gui/**/*.py" = [
     "D",       # pydocstyle
     "ANN",     # flake8-annotations
     "RUF012",  # mutable-class-default

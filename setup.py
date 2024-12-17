@@ -1,15 +1,7 @@
 #!/usr/bin/env python3
 
-# To install `nvitop` with specific version of `nvidia-ml-py`, use:
-#
-#   pip install nvidia-ml-py==xx.yyy.zz nvitop
-#
-# or
-#
-#   pip install 'nvitop[pynvml-xx.yyy.zz]'
-#
 
-"""Setup script for ``nvitop``."""
+"""Setup script for ``nputop``."""
 
 from __future__ import annotations
 
@@ -71,11 +63,11 @@ def vcs_version(name: str, path: Path | str) -> Generator[ModuleType]:
 
 
 with vcs_version(
-    name='nvitop.version',
-    path=HERE / 'nvitop' / 'version.py',
+    name='nputop.version',
+    path=HERE / 'nputop' / 'version.py',
 ) as version:
     setup(
-        name='nvitop',
+        name='nputop',
         version=version.__version__,
         extras_require={
             'lint': [
