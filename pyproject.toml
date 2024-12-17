@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nputop"
-description = "An interactive NVIDIA-GPU process viewer and beyond, the one-stop solution for GPU process management."
+description = "An interactive Ascend-NPU process viewer."
 readme = "README.md"
 requires-python = ">= 3.7"
 authors = [{ name = "Lianzhong You", email = "youlianzhong@gml.ac.cn" }]
