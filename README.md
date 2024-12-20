@@ -26,7 +26,7 @@ cd nputop
 git checkout dev
 # 从项目的源码进行安装测试（目前只能在NVIDIA的GPU上安装）
 pip install -e .
-# 安装完成后使用nvitop命令即可看到监视器
+# 安装完成后使用nputop命令即可看到监视器
 ```
 
 ![image-20241210093300841](assets/image-20241210093300841.png)
