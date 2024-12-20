@@ -10,7 +10,9 @@ An interactive HUAWEI Ascend-NPU process viewer.
 
 开发项目链接：https://github.com/youyve/nputop
 
+要实现的效果：
 
+![image-20241220203322802](assets/image-20241220203322802.png)
 
 ## 开发指南
 
