@@ -117,7 +117,7 @@ import time
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, Generator, Iterable, NamedTuple, overload
 
-from nputop.api import libcuda, libcudart, libnvml
+from nputop.api import libnvml
 from nputop.api.process import GpuProcess
 from nputop.api.utils import (
     NA,
@@ -347,22 +347,22 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
     max_cuda_version = cuda_driver_version
 
-    @staticmethod
-    def cuda_runtime_version() -> str | NaType:
-        """The CUDA Runtime version. This is an alphanumeric string.
+    # @staticmethod
+    # def cuda_runtime_version() -> str | NaType:
+    #     """The CUDA Runtime version. This is an alphanumeric string.
 
-        This can be different from the CUDA driver version. See also :meth:`cuda_driver_version`.
+    #     This can be different from the CUDA driver version. See also :meth:`cuda_driver_version`.
 
-        Returns: Union[str, NaType]
-            The CUDA Runtime version, or :const:`nputop.NA` when no CUDA Runtime is available or no
-            CUDA-capable devices are present.
-        """
-        try:
-            return libcudart.cudaRuntimeGetVersion()
-        except libcudart.cudaError:
-            return NA
+    #     Returns: Union[str, NaType]
+    #         The CUDA Runtime version, or :const:`nputop.NA` when no CUDA Runtime is available or no
+    #         CUDA-capable devices are present.
+    #     """
+    #     try:
+    #         return libcudart.cudaRuntimeGetVersion()
+    #     except libcudart.cudaError:
+    #         return NA
 
-    cudart_version = cuda_runtime_version
+    # cudart_version = cuda_runtime_version
 
     @classmethod
     def count(cls) -> int:
@@ -3124,45 +3124,6 @@ def _parse_cuda_visible_devices(  # pylint: disable=too-many-branches,too-many-s
         return []
     gpu_uuids = set(physical_device_attrs)
 
-    try:
-        raw_uuids = (
-            subprocess.check_output(  # noqa: S603
-                [
-                    sys.executable,
-                    '-c',
-                    textwrap.dedent(
-                        f"""
-                        import nputop.api.device
-
-                        print(
-                            ','.join(
-                                nputop.api.device._parse_cuda_visible_devices_to_uuids(
-                                    {cuda_visible_devices!r},
-                                    verbose=False,
-                                ),
-                            ),
-                        )
-                        """,
-                    ),
-                ],
-            )
-            .decode('utf-8', errors='replace')
-            .strip()
-            .split(',')
-        )
-    except subprocess.CalledProcessError:
-        pass
-    else:
-        uuids = [
-            uuid if uuid in gpu_uuids else uuid.replace('GPU', 'MIG', 1)
-            for uuid in map('GPU-{}'.format, raw_uuids)
-        ]
-        if gpu_uuids.issuperset(uuids) and not _does_any_device_support_mig_mode(uuids):
-            if format == 'uuid':
-                return uuids
-            return [physical_device_attrs[uuid].index for uuid in uuids]
-        cuda_visible_devices = ','.join(uuids)
-
     if cuda_visible_devices is None:
         cuda_visible_devices = ','.join(physical_device_attrs.keys())
 
@@ -3238,88 +3199,3 @@ def _parse_cuda_visible_devices(  # pylint: disable=too-many-branches,too-many-s
     return [device.index for device in devices]  # type: ignore[return-value]
 
 
-def _parse_cuda_visible_devices_to_uuids(
-    cuda_visible_devices: str | None = _VALUE_OMITTED,
-    verbose: bool = True,
-) -> list[str]:
-    """Parse the given ``CUDA_VISIBLE_DEVICES`` environment variable in a separate process and return a list of device UUIDs.
-
-    The UUIDs do not have a prefix ``GPU-`` or ``MIG-``.
-
-    Args:
-        cuda_visible_devices (Optional[str]):
-            The value of the ``CUDA_VISIBLE_DEVICES`` variable. If not given, the value from the
-            environment will be used. If explicitly given by :data:`None`, the ``CUDA_VISIBLE_DEVICES``
-            environment variable will be unset before parsing.
-        verbose (bool):
-            Whether to raise an exception in the subprocess if failed to parse the ``CUDA_VISIBLE_DEVICES``.
-
-    Returns: List[str]
-        A list of device UUIDs without ``GPU-`` or ``MIG-`` prefixes.
-
-    Raises:
-        libcuda.CUDAError_NotInitialized:
-            If cannot found the CUDA driver libraries.
-        libcuda.CUDAError:
-            If failed to parse the ``CUDA_VISIBLE_DEVICES`` environment variable.
-    """  # pylint: disable=line-too-long
-    if cuda_visible_devices is _VALUE_OMITTED:
-        cuda_visible_devices = os.getenv('CUDA_VISIBLE_DEVICES', default=None)
-
-    # Do not inherit file descriptors and handles from the parent process
-    # The `fork` start method should be considered unsafe as it can lead to crashes of the subprocess
-    ctx = mp.get_context('spawn')
-    queue = ctx.SimpleQueue()
-    try:
-        parser = ctx.Process(
-            target=_cuda_visible_devices_parser,
-            args=(cuda_visible_devices, queue, verbose),
-            name='`CUDA_VISIBLE_DEVICES` parser',
-            daemon=True,
-        )
-        parser.start()
-        parser.join()
-    finally:
-        parser.kill()
-    result = queue.get()
-
-    if isinstance(result, Exception):
-        raise result
-    return result
-
-
-def _cuda_visible_devices_parser(
-    cuda_visible_devices: str | None,
-    queue: mp.SimpleQueue,
-    verbose: bool = True,
-) -> None:
-    try:
-        if cuda_visible_devices is not None:
-            os.environ['CUDA_VISIBLE_DEVICES'] = cuda_visible_devices
-        else:
-            os.environ.pop('CUDA_VISIBLE_DEVICES', None)
-
-        # pylint: disable=no-member
-        try:
-            libcuda.cuInit()
-        except (
-            libcuda.CUDAError_NoDevice,
-            libcuda.CUDAError_InvalidDevice,
-            libcuda.CUDAError_SystemDriverMismatch,
-            libcuda.CUDAError_CompatNotSupportedOnDevice,
-        ):
-            queue.put([])
-            raise
-
-        count = libcuda.cuDeviceGetCount()
-        uuids = [libcuda.cuDeviceGetUuid(libcuda.cuDeviceGet(i)) for i in range(count)]
-    except Exception as ex:  # pylint: disable=broad-except
-        queue.put(ex)
-        if verbose:
-            raise
-    else:
-        queue.put(uuids)
-        return
-    finally:
-        # Ensure non-empty queue
-        queue.put(libcuda.CUDAError_NotInitialized())  # pylint: disable=no-member

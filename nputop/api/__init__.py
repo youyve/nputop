@@ -16,7 +16,7 @@
 # ==============================================================================
 """The core APIs of nputop."""
 
-from nputop.api import collector, device, host, libcuda, libcudart, libnvml, process, utils
+from nputop.api import collector, device, host, libnvml, process, utils
 from nputop.api.collector import ResourceMetricCollector, collect_in_background, take_snapshots
 from nputop.api.device import (
     CudaDevice,
@@ -57,8 +57,6 @@ __all__ = [
     'NVMLError',
     'nvmlCheckReturn',
     'libnvml',
-    'libcuda',
-    'libcudart',
     # nputop.api.device
     'Device',
     'PhysicalDevice',
