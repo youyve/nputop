@@ -167,12 +167,7 @@ def take_snapshots(
             leaf_devices: list[Device] = []
             for physical_device in physical_devices:
                 devices.append(physical_device)
-                mig_devices = physical_device.mig_devices()
-                if len(mig_devices) > 0:
-                    devices.extend(mig_devices)
-                    leaf_devices.extend(mig_devices)
-                else:
-                    leaf_devices.append(physical_device)
+                leaf_devices.append(physical_device)
         else:
             leaf_devices = devices = list(devices)
         gpu_processes = list(
@@ -416,12 +411,7 @@ class ResourceMetricCollector:  # pylint: disable=too-many-instance-attributes
         self.leaf_devices: list[Device] = []
         for device in self.devices:
             self.all_devices.append(device)
-            mig_devices = device.mig_devices()
-            if len(mig_devices) > 0:
-                self.all_devices.extend(mig_devices)
-                self.leaf_devices.extend(mig_devices)
-            else:
-                self.leaf_devices.append(device)
+            self.leaf_devices.append(device)
 
         self.root_pids: set[int] = root_pids
         self._positive_processes: WeakSet[HostProcess] = WeakSet(

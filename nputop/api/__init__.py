@@ -20,9 +20,7 @@ from nputop.api import collector, device, host, libnvml, process, utils
 from nputop.api.collector import ResourceMetricCollector, collect_in_background, take_snapshots
 from nputop.api.device import (
     CudaDevice,
-    CudaMigDevice,
     Device,
-    MigDevice,
     PhysicalDevice,
     normalize_cuda_visible_devices,
     parse_cuda_visible_devices,
@@ -60,9 +58,7 @@ __all__ = [
     # nputop.api.device
     'Device',
     'PhysicalDevice',
-    'MigDevice',
     'CudaDevice',
-    'CudaMigDevice',
     'parse_cuda_visible_devices',
     'normalize_cuda_visible_devices',
     # nputop.api.process

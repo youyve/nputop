@@ -523,9 +523,6 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
             self._compute_instance_id = (
                 compute_instance_id if compute_instance_id != UINT_MAX else NA
             )
-        elif device.is_mig_device():
-            self._gpu_instance_id = device.gpu_instance_id()
-            self._compute_instance_id = device.compute_instance_id()
         else:
             self._gpu_instance_id = self._compute_instance_id = NA
 

@@ -24,28 +24,18 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
 
         self.all_devices = []
         self.leaf_devices = []
-        self.mig_device_counts = [0] * self.device_count
         self.mig_enabled_device_count = 0
         for i, device in enumerate(self.devices):
             self.all_devices.append(device)
+            self.leaf_devices.append(device)
 
-            mig_devices = device.mig_devices()
-            self.mig_device_counts[i] = len(mig_devices)
-            if self.mig_device_counts[i] > 0:
-                self.all_devices.extend(mig_devices)
-                self.leaf_devices.extend(mig_devices)
-                self.mig_enabled_device_count += 1
-            else:
-                self.leaf_devices.append(device)
-
-        self.mig_device_count = sum(self.mig_device_counts)
         self.all_device_count = len(self.all_devices)
         self.leaf_device_count = len(self.leaf_devices)
 
         self._compact = compact
         self.width = max(79, root.width)
         self.compact_height = (
-            4 + 2 * (self.device_count + 1) + self.mig_device_count + self.mig_enabled_device_count
+            4 + 2 * (self.device_count + 1) + self.mig_enabled_device_count
         )
         self.full_height = self.compact_height + self.device_count + 1
         self.height = self.compact_height if compact else self.full_height
@@ -87,13 +77,6 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
             self.formats_full[0] = self.formats_full[0].replace(
                 'persistence_mode',
                 'current_driver_model',
-            )
-
-        self.support_mig = any('N/A' not in device.mig_mode for device in self.snapshots)
-        if self.support_mig:
-            self.formats_full[0] = self.formats_full[0].replace(
-                '{total_volatile_uncorrected_ecc_errors:>20}',
-                '{mig_mode:>8}  {total_volatile_uncorrected_ecc_errors:>10}',
             )
 
     @property
@@ -144,29 +127,20 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
         for device in snapshots:
             if device.name.startswith('NVIDIA '):
                 device.name = device.name.replace('NVIDIA ', '', 1)
-            if device.is_mig_device:
-                device.name = device.name.rpartition(' ')[-1]
-                if device.bar1_memory_percent is not NA:
-                    device.bar1_memory_percent = round(device.bar1_memory_percent)
-                    if device.bar1_memory_percent >= 100:
-                        device.bar1_memory_percent_string = 'MAX'
-                    else:
-                        device.bar1_memory_percent_string = f'{round(device.bar1_memory_percent)}%'
-            else:
-                device.name = cut_string(device.name, maxlen=18, padstr='..', align='right')
-                device.current_driver_model = device.current_driver_model.replace('WDM', 'TCC')
-                device.display_active = device.display_active.replace('Enabled', 'On').replace(
-                    'Disabled',
-                    'Off',
-                )
-                device.persistence_mode = device.persistence_mode.replace('Enabled', 'On').replace(
-                    'Disabled',
-                    'Off',
-                )
-                device.mig_mode = device.mig_mode.replace('N/A', 'N/A ')
-                device.compute_mode = device.compute_mode.replace('Exclusive', 'E.')
-                if device.fan_speed is not NA and device.fan_speed >= 100:
-                    device.fan_speed_string = 'MAX'
+
+            device.name = cut_string(device.name, maxlen=18, padstr='..', align='right')
+            device.current_driver_model = device.current_driver_model.replace('WDM', 'TCC')
+            device.display_active = device.display_active.replace('Enabled', 'On').replace(
+                'Disabled',
+                'Off',
+            )
+            device.persistence_mode = device.persistence_mode.replace('Enabled', 'On').replace(
+                'Disabled',
+                'Off',
+            )
+            device.compute_mode = device.compute_mode.replace('Exclusive', 'E.')
+            if device.fan_speed is not NA and device.fan_speed >= 100:
+                device.fan_speed_string = 'MAX'
 
         with self.snapshot_lock:
             self._snapshot_buffer = snapshots
@@ -213,8 +187,6 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
                 )
                 if host.WINDOWS:
                     header[-2] = header[-2].replace('Persistence-M', '    TCC/WDDM ')
-                if self.support_mig:
-                    header[-2] = header[-2].replace('Volatile Uncorr. ECC', 'MIG M.   Uncorr. ECC')
             header.append(
                 '╞═══════════════════════════════╪══════════════════════╪══════════════════════╡',
             )
@@ -246,13 +218,6 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
             separator_line = separator_line[:-1] + '┼' + '─' * (remaining_width - 1) + '┤'
 
         if self.device_count > 0:
-            for mig_device_count in self.mig_device_counts:
-                if compact:
-                    frame.extend((data_line, separator_line))
-                else:
-                    frame.extend((data_line, data_line, separator_line))
-                if mig_device_count > 0:
-                    frame.extend((data_line,) * mig_device_count + (separator_line,))
 
             frame.pop()
             frame.append(
@@ -311,11 +276,11 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
                 if device.real == selected_device:
                     attr = 'bold'
                 elif (
-                    device.is_mig_device or device.physical_index != selected_device.physical_index
+                    device.physical_index != selected_device.physical_index
                 ):
                     attr = 'dim'
 
-            fmts = self.mig_formats if device.is_mig_device else formats
+            fmts = formats
             for y, fmt in enumerate(fmts, start=y_start):
                 self.addstr(y, self.x, fmt.format(**device.__dict__))
                 self.color_at(y, self.x + 1, width=31, fg=device.display_color, attr=attr)
@@ -342,7 +307,7 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
                     ),
                 ]
                 if self.compact:
-                    if remaining_width >= 44 and not device.is_mig_device:
+                    if remaining_width >= 44:
                         left_width = (remaining_width - 6 + 1) // 2 - 1
                         right_width = (remaining_width - 6) // 2 + 1
                         matrix = [
@@ -374,8 +339,6 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
                         if remaining_width >= 44 and len(prev_device_index) == 1:
                             self.addstr(y_start - 1, self.x + 80 + left_width + 1, '┴')
                         matrix.pop()
-                elif device.is_mig_device:
-                    matrix.pop()
                 for x_offset, y, width, prefix, utilization, color in matrix:
                     # pylint: disable-next=disallowed-name
                     bar = make_bar(prefix, utilization, width=width)
@@ -425,7 +388,7 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
                         return colored(s, device.display_color)  # noqa: B023
                     return ''
 
-                fmts = self.mig_formats if device.is_mig_device else self.formats_full
+                fmts = self.formats_full
                 for fmt in fmts:
                     line = fmt.format(**device.__dict__)
                     lines.append('│'.join(map(colorize, line.split('│'))))
@@ -466,8 +429,7 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
                             device.gpu_display_color,
                         ),
                     ]
-                    if device.is_mig_device:
-                        matrix.pop()
+
                     for y, (prefix, utilization, color) in enumerate(matrix, start=y_start):
                         bar = make_bar(  # pylint: disable=disallowed-name
                             prefix,
