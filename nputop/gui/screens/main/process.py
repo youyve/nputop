@@ -1,4 +1,4 @@
-# This file is part of nputop, the interactive NVIDIA-GPU process viewer.
+# This file is part of nputop, the interactive NVIDIA-NPU process viewer.
 # License: GNU GPL version 3.
 
 # pylint: disable=missing-module-docstring,missing-class-docstring,missing-function-docstring
@@ -18,7 +18,7 @@ from nputop.gui.library import (
     USERCONTEXT,
     USERNAME,
     Displayable,
-    GpuProcess,
+    NpuProcess,
     MouseEvent,
     Selection,
     WideString,
@@ -65,28 +65,28 @@ class ProcessPanel(Displayable):  # pylint: disable=too-many-instance-attributes
             offset=19,
             column='USER',
             previous='pid',
-            next='gpu_memory',
+            next='npu_memory',
         ),
-        'gpu_memory': Order(
+        'npu_memory': Order(
             key=attrgetter(
                 '_gone',
-                'gpu_memory',
-                'gpu_sm_utilization',
+                'npu_memory',
+                'npu_sm_utilization',
                 'cpu_percent',
                 'pid',
                 'device.tuple_index',
             ),
             reverse=True,
             offset=25,
-            column='GPU-MEM',
+            column='NPU-MEM',
             previous='username',
             next='sm_utilization',
         ),
         'sm_utilization': Order(
             key=attrgetter(
                 '_gone',
-                'gpu_sm_utilization',
-                'gpu_memory',
+                'npu_sm_utilization',
+                'npu_memory',
                 'cpu_percent',
                 'pid',
                 'device.tuple_index',
@@ -94,7 +94,7 @@ class ProcessPanel(Displayable):  # pylint: disable=too-many-instance-attributes
             reverse=True,
             offset=34,
             column='SM',
-            previous='gpu_memory',
+            previous='npu_memory',
             next='cpu_percent',
         ),
         'cpu_percent': Order(
@@ -261,7 +261,7 @@ class ProcessPanel(Displayable):  # pylint: disable=too-many-instance-attributes
 
     @ttl_cache(ttl=2.0)
     def take_snapshots(self):
-        snapshots = GpuProcess.take_snapshots(self.processes, failsafe=True)
+        snapshots = NpuProcess.take_snapshots(self.processes, failsafe=True)
         for condition in self.filters:
             snapshots = filter(condition, snapshots)
         snapshots = list(snapshots)
@@ -293,7 +293,7 @@ class ProcessPanel(Displayable):  # pylint: disable=too-many-instance-attributes
         header = [
             '╒' + '═' * (self.width - 2) + '╕',
             '│ {} │'.format('Processes:'.ljust(self.width - 4)),
-            '│ GPU     PID      USER  GPU-MEM %SM  {} │'.format(
+            '│ NPU     PID      USER  NPU-MEM %SM  {} │'.format(
                 '  '.join(self.host_headers).ljust(self.width - 40),
             ),
             '╞' + '═' * (self.width - 2) + '╡',
@@ -383,7 +383,7 @@ class ProcessPanel(Displayable):  # pylint: disable=too-many-instance-attributes
                     attr='bold',
                 )
 
-        self.addstr(self.y + 3, self.x + 1, ' GPU     PID      USER  GPU-MEM %SM  ')
+        self.addstr(self.y + 3, self.x + 1, ' NPU     PID      USER  NPU-MEM %SM  ')
         host_offset = max(self.host_offset, 0)
         command_offset = max(14 + len(self.host_headers[-2]) - host_offset, 0)
         if command_offset > 0:
@@ -475,8 +475,8 @@ class ProcessPanel(Displayable):  # pylint: disable=too-many-instance-attributes
                         str(
                             WideString(cut_string(process.username, maxlen=7, padstr='+')).rjust(7),
                         ),
-                        process.gpu_memory_human,
-                        process.gpu_sm_utilization_string.replace('%', ''),
+                        process.npu_memory_human,
+                        process.npu_sm_utilization_string.replace('%', ''),
                         WideString(host_info).ljust(self.width - 39)[: self.width - 39],
                     ),
                 )
@@ -599,8 +599,8 @@ class ProcessPanel(Displayable):  # pylint: disable=too-many-instance-attributes
                     cut_string(process.pid, maxlen=7, padstr='.'),
                     process.type,
                     str(WideString(cut_string(process.username, maxlen=7, padstr='+')).rjust(7)),
-                    process.gpu_memory_human,
-                    process.gpu_sm_utilization_string.replace('%', ''),
+                    process.npu_memory_human,
+                    process.npu_sm_utilization_string.replace('%', ''),
                     WideString(host_info).ljust(self.width - 39)[: self.width - 39],
                 )
                 if process.is_zombie or process.no_permissions or process.is_gone:

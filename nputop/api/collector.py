@@ -1,4 +1,4 @@
-# This file is part of nputop, the interactive NVIDIA-GPU process viewer.
+# This file is part of nputop, the interactive NVIDIA-NPU process viewer.
 #
 # Copyright 2021-2024 Xuehai Pan. All Rights Reserved.
 #
@@ -30,7 +30,7 @@ from weakref import WeakSet
 
 from nputop.api import host
 from nputop.api.device import CudaDevice, Device
-from nputop.api.process import GpuProcess, HostProcess
+from nputop.api.process import NpuProcess, HostProcess
 from nputop.api.utils import GiB, MiB, Snapshot
 
 
@@ -39,7 +39,7 @@ __all__ = ['take_snapshots', 'collect_in_background', 'ResourceMetricCollector']
 
 class SnapshotResult(NamedTuple):  # pylint: disable=missing-class-docstring
     devices: list[Snapshot]
-    gpu_processes: list[Snapshot]
+    npu_processes: list[Snapshot]
 
 
 timer = time.monotonic
@@ -56,25 +56,25 @@ def _unique(iterable: Iterable[_T]) -> list[_T]:
 def take_snapshots(
     devices: Device | Iterable[Device] | None = None,
     *,
-    gpu_processes: bool | GpuProcess | Iterable[GpuProcess] | None = None,
+    npu_processes: bool | NpuProcess | Iterable[NpuProcess] | None = None,
 ) -> SnapshotResult:
-    """Retrieve status of demanded devices and GPU processes.
+    """Retrieve status of demanded devices and NPU processes.
 
     Args:
         devices (Optional[Union[Device, Iterable[Device]]]):
-            Requested devices for snapshots. If not given, the devices will be determined from GPU
-            processes: **(1)** All devices (no GPU processes are given); **(2)** Devices that used
-            by given GPU processes.
-        gpu_processes (Optional[Union[bool, GpuProcess, Iterable[GpuProcess]]]):
-            Requested GPU processes snapshots. If not given, all GPU processes running on the
-            requested device will be returned. The GPU process snapshots can be suppressed by
-            specifying ``gpu_processes=False``.
+            Requested devices for snapshots. If not given, the devices will be determined from NPU
+            processes: **(1)** All devices (no NPU processes are given); **(2)** Devices that used
+            by given NPU processes.
+        npu_processes (Optional[Union[bool, NpuProcess, Iterable[NpuProcess]]]):
+            Requested NPU processes snapshots. If not given, all NPU processes running on the
+            requested device will be returned. The NPU process snapshots can be suppressed by
+            specifying ``npu_processes=False``.
 
     Returns: SnapshotResult
         A named tuple containing two lists of snapshots.
 
     Note:
-        If not arguments are specified, all devices and all GPU processes will
+        If not arguments are specified, all devices and all NPU processes will
         be returned.
 
     Examples:
@@ -92,18 +92,18 @@ def take_snapshots(
                 ),
                 ...
             ],
-            gpu_processes=[
-                GpuProcessSnapshot(
-                    real=GpuProcess(pid=xxxxxx, device=PhysicalDevice(index=0, ...), ...),
+            npu_processes=[
+                NpuProcessSnapshot(
+                    real=NpuProcess(pid=xxxxxx, device=PhysicalDevice(index=0, ...), ...),
                     ...
                 ),
                 ...
             ]
         )
 
-        >>> device_snapshots, gpu_process_snapshots = take_snapshots(Device.all())  # type: Tuple[List[DeviceSnapshot], List[GpuProcessSnapshot]]
+        >>> device_snapshots, npu_process_snapshots = take_snapshots(Device.all())  # type: Tuple[List[DeviceSnapshot], List[NpuProcessSnapshot]]
 
-        >>> device_snapshots, _ = take_snapshots(gpu_processes=False)  # ignore process snapshots
+        >>> device_snapshots, _ = take_snapshots(npu_processes=False)  # ignore process snapshots
 
         >>> take_snapshots(Device.cuda.all())  # use CUDA device enumeration
         SnapshotResult(
@@ -117,9 +117,9 @@ def take_snapshots(
                     ...
                 ),
             ],
-            gpu_processes=[
-                GpuProcessSnapshot(
-                    real=GpuProcess(pid=xxxxxx, device=CudaDevice(cuda_index=0, ...), ...),
+            npu_processes=[
+                NpuProcessSnapshot(
+                    real=NpuProcess(pid=xxxxxx, device=CudaDevice(cuda_index=0, ...), ...),
                     ...
                 ),
                 ...
@@ -134,9 +134,9 @@ def take_snapshots(
                     ...
                 )
             ],
-            gpu_processes=[
-                GpuProcessSnapshot(
-                    real=GpuProcess(pid=xxxxxx, device=CudaDevice(cuda_index=1, ...), ...),
+            npu_processes=[
+                NpuProcessSnapshot(
+                    real=NpuProcess(pid=xxxxxx, device=CudaDevice(cuda_index=1, ...), ...),
                     ...
                 ),
                 ...
@@ -145,19 +145,19 @@ def take_snapshots(
     """  # pylint: disable=line-too-long
     if isinstance(devices, Device):
         devices = [devices]
-    if isinstance(gpu_processes, GpuProcess):
-        gpu_processes = [gpu_processes]
+    if isinstance(npu_processes, NpuProcess):
+        npu_processes = [npu_processes]
 
-    if gpu_processes is not None and gpu_processes is not True:
-        if gpu_processes:  # is a non-empty list/tuple
-            gpu_processes = list(gpu_processes)
-            process_devices = _unique(process.device for process in gpu_processes)
+    if npu_processes is not None and npu_processes is not True:
+        if npu_processes:  # is a non-empty list/tuple
+            npu_processes = list(npu_processes)
+            process_devices = _unique(process.device for process in npu_processes)
             for device in process_devices:
-                device.processes()  # update GPU status for requested GPU processes
+                device.processes()  # update NPU status for requested NPU processes
             if devices is None:
                 devices = process_devices
         else:
-            gpu_processes = []  # False or empty list/tuple
+            npu_processes = []  # False or empty list/tuple
             if devices is None:
                 devices = Device.all()
     else:
@@ -175,14 +175,14 @@ def take_snapshots(
                     leaf_devices.append(physical_device)
         else:
             leaf_devices = devices = list(devices)
-        gpu_processes = list(
+        npu_processes = list(
             itertools.chain.from_iterable(device.processes().values() for device in leaf_devices),
         )
 
     devices = [device.as_snapshot() for device in devices]  # type: ignore[union-attr]
-    gpu_processes = GpuProcess.take_snapshots(gpu_processes, failsafe=True)
+    npu_processes = NpuProcess.take_snapshots(npu_processes, failsafe=True)
 
-    return SnapshotResult(devices, gpu_processes)
+    return SnapshotResult(devices, npu_processes)
 
 
 # pylint: disable-next=too-many-arguments
@@ -206,7 +206,7 @@ def collect_in_background(
             the resource metrics and returns a boolean indicating whether to continue monitoring.
         collector (Optional[ResourceMetricCollector]):
             A :class:`ResourceMetricCollector` instance to collect metrics. If not given, it will
-            collect metrics for all GPUs and subprocess of the current process.
+            collect metrics for all NPUs and subprocess of the current process.
         interval (Optional[float]):
             The collect interval. If not given, use ``collector.interval``.
         on_start (Optional[Callable[[ResourceMetricCollector], None]]):
@@ -285,7 +285,7 @@ class ResourceMetricCollector:  # pylint: disable=too-many-instance-attributes
             Set of Device instances for logging. If not given, all physical devices on board will be
             used.
         root_pids (Set[int]):
-            A set of PIDs, only the status of the descendant processes on the GPUs will be collected.
+            A set of PIDs, only the status of the descendant processes on the NPUs will be collected.
             If not given, the PID of the current process will be used.
         interval (float):
             The snapshot interval for background daemon thread.
@@ -311,8 +311,8 @@ class ResourceMetricCollector:  # pylint: disable=too-many-instance-attributes
 
         >>> from nputop import ResourceMetricCollector, Device
 
-        >>> collector = ResourceMetricCollector()                           # log all devices and descendant processes of the current process on the GPUs
-        >>> collector = ResourceMetricCollector(root_pids={1})              # log all devices and all GPU processes
+        >>> collector = ResourceMetricCollector()                           # log all devices and descendant processes of the current process on the NPUs
+        >>> collector = ResourceMetricCollector(root_pids={1})              # log all devices and all NPU processes
         >>> collector = ResourceMetricCollector(devices=Device.cuda.all())  # use the CUDA ordinal
 
         >>> with collector(tag='<tag>'):
@@ -331,30 +331,30 @@ class ResourceMetricCollector:  # pylint: disable=too-many-instance-attributes
             '<tag>/host/load_average (%) (5 min)/mean': 10.072539414569503,
             '<tag>/host/load_average (%) (15 min)/mean': 11.91126970422139,
             ...,
-            '<tag>/cuda:0 (gpu:3)/memory_used (MiB)/mean': 3.875,
-            '<tag>/cuda:0 (gpu:3)/memory_free (MiB)/mean': 11015.562499999998,
-            '<tag>/cuda:0 (gpu:3)/memory_total (MiB)/mean': 11019.437500000002,
-            '<tag>/cuda:0 (gpu:3)/memory_percent (%)/mean': 0.0,
-            '<tag>/cuda:0 (gpu:3)/gpu_utilization (%)/mean': 0.0,
-            '<tag>/cuda:0 (gpu:3)/memory_utilization (%)/mean': 0.0,
-            '<tag>/cuda:0 (gpu:3)/fan_speed (%)/mean': 22.0,
-            '<tag>/cuda:0 (gpu:3)/temperature (C)/mean': 25.0,
-            '<tag>/cuda:0 (gpu:3)/power_usage (W)/mean': 19.11166264116916,
+            '<tag>/cuda:0 (npu:3)/memory_used (MiB)/mean': 3.875,
+            '<tag>/cuda:0 (npu:3)/memory_free (MiB)/mean': 11015.562499999998,
+            '<tag>/cuda:0 (npu:3)/memory_total (MiB)/mean': 11019.437500000002,
+            '<tag>/cuda:0 (npu:3)/memory_percent (%)/mean': 0.0,
+            '<tag>/cuda:0 (npu:3)/npu_utilization (%)/mean': 0.0,
+            '<tag>/cuda:0 (npu:3)/memory_utilization (%)/mean': 0.0,
+            '<tag>/cuda:0 (npu:3)/fan_speed (%)/mean': 22.0,
+            '<tag>/cuda:0 (npu:3)/temperature (C)/mean': 25.0,
+            '<tag>/cuda:0 (npu:3)/power_usage (W)/mean': 19.11166264116916,
             ...,
-            '<tag>/cuda:1 (gpu:2)/memory_used (MiB)/mean': 8878.875,
+            '<tag>/cuda:1 (npu:2)/memory_used (MiB)/mean': 8878.875,
             ...,
-            '<tag>/cuda:2 (gpu:1)/memory_used (MiB)/mean': 8182.875,
+            '<tag>/cuda:2 (npu:1)/memory_used (MiB)/mean': 8182.875,
             ...,
-            '<tag>/cuda:3 (gpu:0)/memory_used (MiB)/mean': 9286.875,
+            '<tag>/cuda:3 (npu:0)/memory_used (MiB)/mean': 9286.875,
             ...,
             '<tag>/pid:12345/host/cpu_percent (%)/mean': 151.34342772112265,
             '<tag>/pid:12345/host/host_memory (MiB)/mean': 44749.72373447514,
             '<tag>/pid:12345/host/host_memory_percent (%)/mean': 8.675082352111717,
             '<tag>/pid:12345/host/running_time (min)': 336.23803206741576,
-            '<tag>/pid:12345/cuda:1 (gpu:4)/gpu_memory (MiB)/mean': 8861.0,
-            '<tag>/pid:12345/cuda:1 (gpu:4)/gpu_memory_percent (%)/mean': 80.4,
-            '<tag>/pid:12345/cuda:1 (gpu:4)/gpu_memory_utilization (%)/mean': 6.711118172407917,
-            '<tag>/pid:12345/cuda:1 (gpu:4)/gpu_sm_utilization (%)/mean': 48.23283397736476,
+            '<tag>/pid:12345/cuda:1 (npu:4)/npu_memory (MiB)/mean': 8861.0,
+            '<tag>/pid:12345/cuda:1 (npu:4)/npu_memory_percent (%)/mean': 80.4,
+            '<tag>/pid:12345/cuda:1 (npu:4)/npu_memory_utilization (%)/mean': 6.711118172407917,
+            '<tag>/pid:12345/cuda:1 (npu:4)/npu_sm_utilization (%)/mean': 48.23283397736476,
             ...,
             '<tag>/duration (s)': 7.247399162035435,
             '<tag>/timestamp': 1655909466.9981883
@@ -363,13 +363,13 @@ class ResourceMetricCollector:  # pylint: disable=too-many-instance-attributes
 
     DEVICE_METRICS: ClassVar[list[tuple[str, str, float | int]]] = [
         # (<attribute>, <name>, <unit>)
-        # GPU memory metrics
+        # NPU memory metrics
         ('memory_used', 'memory_used (MiB)', MiB),
         ('memory_free', 'memory_free (MiB)', MiB),
         ('memory_total', 'memory_total (MiB)', MiB),
         ('memory_percent', 'memory_percent (%)', 1.0),
-        # GPU utilization metrics
-        ('gpu_utilization', 'gpu_utilization (%)', 1.0),
+        # NPU utilization metrics
+        ('npu_utilization', 'npu_utilization (%)', 1.0),
         ('memory_utilization', 'memory_utilization (%)', 1.0),
         # Miscellaneous
         ('fan_speed', 'fan_speed (%)', 1.0),
@@ -384,12 +384,12 @@ class ResourceMetricCollector:  # pylint: disable=too-many-instance-attributes
         ('host_memory', 'host', 'host_memory (MiB)', MiB),
         ('host_memory_percent', 'host', 'host_memory_percent (%)', 1.0),
         ('running_time_in_seconds', 'host', 'running_time (min)', 60.0),
-        # GPU memory metrics
-        ('gpu_memory', None, 'gpu_memory (MiB)', MiB),
-        ('gpu_memory_percent', None, 'gpu_memory_percent (%)', 1.0),
-        ('gpu_memory_utilization', None, 'gpu_memory_utilization (%)', 1.0),
-        # GPU utilization metrics
-        ('gpu_sm_utilization', None, 'gpu_sm_utilization (%)', 1.0),
+        # NPU memory metrics
+        ('npu_memory', None, 'npu_memory (MiB)', MiB),
+        ('npu_memory_percent', None, 'npu_memory_percent (%)', 1.0),
+        ('npu_memory_utilization', None, 'npu_memory_utilization (%)', 1.0),
+        # NPU utilization metrics
+        ('npu_sm_utilization', None, 'npu_sm_utilization (%)', 1.0),
     ]
 
     def __init__(
@@ -672,12 +672,12 @@ class ResourceMetricCollector:  # pylint: disable=too-many-instance-attributes
     def take_snapshots(self) -> SnapshotResult:
         """Take snapshots of the current resource metrics and update the metric buffer."""
         if len(self.root_pids) > 0:
-            all_gpu_processes: list[GpuProcess] = []
+            all_npu_processes: list[NpuProcess] = []
             for device in self.leaf_devices:
-                all_gpu_processes.extend(device.processes().values())
+                all_npu_processes.extend(device.processes().values())
 
-            gpu_processes = []
-            for process in all_gpu_processes:
+            npu_processes = []
+            for process in all_npu_processes:
                 if process.host in self._negative_processes:
                     continue
 
@@ -701,15 +701,15 @@ class ResourceMetricCollector:  # pylint: disable=too-many-instance-attributes
                         self._negative_processes.update(parents)
 
                 if positive:
-                    gpu_processes.append(process)
+                    npu_processes.append(process)
         else:
-            gpu_processes = []
+            npu_processes = []
 
         timestamp = timer()
         epoch_timestamp = time.time()
         metrics = {}
         device_snapshots = [device.as_snapshot() for device in self.all_devices]
-        gpu_process_snapshots = GpuProcess.take_snapshots(gpu_processes, failsafe=True)
+        npu_process_snapshots = NpuProcess.take_snapshots(npu_processes, failsafe=True)
 
         metrics.update(
             {
@@ -731,7 +731,7 @@ class ResourceMetricCollector:  # pylint: disable=too-many-instance-attributes
 
         device_identifiers = {}
         for device_snapshot in device_snapshots:
-            identifier = f'gpu:{device_snapshot.index}'
+            identifier = f'npu:{device_snapshot.index}'
             if isinstance(device_snapshot.real, CudaDevice):
                 identifier = f'cuda:{device_snapshot.cuda_index} ({identifier})'
             device_identifiers[device_snapshot.real] = identifier
@@ -740,7 +740,7 @@ class ResourceMetricCollector:  # pylint: disable=too-many-instance-attributes
                 value = float(getattr(device_snapshot, attr)) / unit
                 metrics[f'{identifier}/{name}'] = value
 
-        for process_snapshot in gpu_process_snapshots:
+        for process_snapshot in npu_process_snapshots:
             device_identifier = device_identifiers[process_snapshot.device]
             identifier = f'pid:{process_snapshot.pid}'
 
@@ -758,7 +758,7 @@ class ResourceMetricCollector:  # pylint: disable=too-many-instance-attributes
                 )
                 self._last_timestamp = timestamp
 
-        return SnapshotResult(device_snapshots, gpu_process_snapshots)
+        return SnapshotResult(device_snapshots, npu_process_snapshots)
 
     def _target(self) -> None:
         self._daemon_running.wait()

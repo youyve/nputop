@@ -1,18 +1,18 @@
-# This file is part of nputop, the interactive NVIDIA-GPU process viewer.
+# This file is part of nputop, the interactive NVIDIA-NPU process viewer.
 # License: GNU GPL version 3.
 
 # pylint: disable=missing-module-docstring,missing-class-docstring,missing-function-docstring
 
 
 from nputop.api import NA, GiB
-from nputop.api import GpuProcess as GpuProcessBase
+from nputop.api import NpuProcess as NpuProcessBase
 from nputop.api import HostProcess, Snapshot, bytes2human, host, timedelta2human, utilization2string
 
 
 __all__ = [
     'host',
     'HostProcess',
-    'GpuProcess',
+    'NpuProcess',
     'NA',
     'Snapshot',
     'bytes2human',
@@ -21,7 +21,7 @@ __all__ = [
 ]
 
 
-class GpuProcess(GpuProcessBase):
+class NpuProcess(NpuProcessBase):
     def __new__(cls, *args, **kwargs):
         instance = super().__new__(cls, *args, **kwargs)
         instance._snapshot = None
@@ -56,8 +56,8 @@ class GpuProcess(GpuProcessBase):
         snapshot = super().as_snapshot(host_process_snapshot_cache=host_process_snapshot_cache)
 
         snapshot.type = snapshot.type.replace('C+G', 'X')
-        if snapshot.gpu_memory_human is NA and (host.WINDOWS or host.WSL):
-            snapshot.gpu_memory_human = 'WDDM:N/A'
+        if snapshot.npu_memory_human is NA and (host.WINDOWS or host.WSL):
+            snapshot.npu_memory_human = 'WDDM:N/A'
 
         snapshot.cpu_percent_string = snapshot.host.cpu_percent_string
         snapshot.memory_percent_string = snapshot.host.memory_percent_string
@@ -71,26 +71,26 @@ class GpuProcess(GpuProcessBase):
             snapshot.no_permissions = False
             snapshot.is_gone = snapshot.cmdline == ['No Such Process']
 
-        snapshot.gpu_memory_percent_string = self.gpu_memory_percent_string()
-        snapshot.gpu_sm_utilization_string = self.gpu_sm_utilization_string()
-        snapshot.gpu_memory_utilization_string = self.gpu_memory_utilization_string()
-        snapshot.gpu_encoder_utilization_string = self.gpu_encoder_utilization_string()
-        snapshot.gpu_decoder_utilization_string = self.gpu_decoder_utilization_string()
+        snapshot.npu_memory_percent_string = self.npu_memory_percent_string()
+        snapshot.npu_sm_utilization_string = self.npu_sm_utilization_string()
+        snapshot.npu_memory_utilization_string = self.npu_memory_utilization_string()
+        snapshot.npu_encoder_utilization_string = self.npu_encoder_utilization_string()
+        snapshot.npu_decoder_utilization_string = self.npu_decoder_utilization_string()
 
         self._snapshot = snapshot  # pylint: disable=attribute-defined-outside-init
         return snapshot
 
-    def gpu_memory_percent_string(self) -> str:  # in percentage
-        return utilization2string(self.gpu_memory_percent())
+    def npu_memory_percent_string(self) -> str:  # in percentage
+        return utilization2string(self.npu_memory_percent())
 
-    def gpu_sm_utilization_string(self) -> str:  # in percentage
-        return utilization2string(self.gpu_sm_utilization())
+    def npu_sm_utilization_string(self) -> str:  # in percentage
+        return utilization2string(self.npu_sm_utilization())
 
-    def gpu_memory_utilization_string(self) -> str:  # in percentage
-        return utilization2string(self.gpu_memory_utilization())
+    def npu_memory_utilization_string(self) -> str:  # in percentage
+        return utilization2string(self.npu_memory_utilization())
 
-    def gpu_encoder_utilization_string(self) -> str:  # in percentage
-        return utilization2string(self.gpu_encoder_utilization())
+    def npu_encoder_utilization_string(self) -> str:  # in percentage
+        return utilization2string(self.npu_encoder_utilization())
 
-    def gpu_decoder_utilization_string(self) -> str:  # in percentage
-        return utilization2string(self.gpu_decoder_utilization())
+    def npu_decoder_utilization_string(self) -> str:  # in percentage
+        return utilization2string(self.npu_decoder_utilization())

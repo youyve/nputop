@@ -1,4 +1,4 @@
-# This file is part of nputop, the interactive NVIDIA-GPU process viewer.
+# This file is part of nputop, the interactive NVIDIA-NPU process viewer.
 # License: GNU GPL version 3.
 
 # pylint: disable=missing-module-docstring,missing-class-docstring,missing-function-docstring
@@ -17,7 +17,7 @@ from nputop.gui.library import (
     USERNAME,
     BufferedHistoryGraph,
     Displayable,
-    GpuProcess,
+    NpuProcess,
     Selection,
     WideString,
     bytes2human,
@@ -85,8 +85,8 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
         super().__init__(win, root)
 
         self.selection = Selection(panel=self)
-        self.used_gpu_memory = None
-        self.gpu_sm_utilization = None
+        self.used_npu_memory = None
+        self.npu_sm_utilization = None
         self.cpu_percent = None
         self.used_host_memory = None
 
@@ -132,8 +132,8 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
 
         total_host_memory = host.virtual_memory().total
         total_host_memory_human = bytes2human(total_host_memory)
-        total_gpu_memory = self.process.device.memory_total()
-        total_gpu_memory_human = bytes2human(total_gpu_memory)
+        total_npu_memory = self.process.device.memory_total()
+        total_npu_memory_human = bytes2human(total_npu_memory)
 
         def format_cpu_percent(value):
             if value is NA:
@@ -162,32 +162,32 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
                 total_host_memory_human,
             )
 
-        def format_gpu_memory(value):
-            if value is not NA and total_gpu_memory is not NA:
-                return 'GPU-MEM: {} ({:.1f}%)'.format(  # noqa: UP032
+        def format_npu_memory(value):
+            if value is not NA and total_npu_memory is not NA:
+                return 'NPU-MEM: {} ({:.1f}%)'.format(  # noqa: UP032
                     bytes2human(value),
-                    round(100.0 * value / total_gpu_memory, 1),
+                    round(100.0 * value / total_npu_memory, 1),
                 )
-            return f'GPU-MEM: {value}'
+            return f'NPU-MEM: {value}'
 
-        def format_max_gpu_memory(value):
-            if value is not NA and total_gpu_memory is not NA:
-                return 'MAX GPU-MEM: {} ({:.1f}%) / {}'.format(  # noqa: UP032
+        def format_max_npu_memory(value):
+            if value is not NA and total_npu_memory is not NA:
+                return 'MAX NPU-MEM: {} ({:.1f}%) / {}'.format(  # noqa: UP032
                     bytes2human(value),
-                    round(100.0 * value / total_gpu_memory, 1),
-                    total_gpu_memory_human,
+                    round(100.0 * value / total_npu_memory, 1),
+                    total_npu_memory_human,
                 )
-            return f'MAX GPU-MEM: {value}'
+            return f'MAX NPU-MEM: {value}'
 
         def format_sm(value):
             if value is NA:
-                return f'GPU-SM: {value}'
-            return f'GPU-SM: {value:.1f}%'
+                return f'NPU-SM: {value}'
+            return f'NPU-SM: {value:.1f}%'
 
         def format_max_sm(value):
             if value is NA:
-                return f'MAX GPU-SM: {value}'
-            return f'MAX GPU-SM: {value:.1f}%'
+                return f'MAX NPU-SM: {value}'
+            return f'MAX NPU-SM: {value:.1f}%'
 
         with self.snapshot_lock:
             self.cpu_percent = BufferedHistoryGraph(
@@ -214,18 +214,18 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
                 format=format_host_memory,
                 max_format=format_max_host_memory,
             )
-            self.used_gpu_memory = BufferedHistoryGraph(
+            self.used_npu_memory = BufferedHistoryGraph(
                 interval=1.0,
-                upperbound=total_gpu_memory or 1,
+                upperbound=total_npu_memory or 1,
                 width=self.right_width,
                 height=self.upper_height,
                 baseline=0.0,
                 upsidedown=False,
                 dynamic_bound=True,
-                format=format_gpu_memory,
-                max_format=format_max_gpu_memory,
+                format=format_npu_memory,
+                max_format=format_max_npu_memory,
             )
-            self.gpu_sm_utilization = BufferedHistoryGraph(
+            self.npu_sm_utilization = BufferedHistoryGraph(
                 interval=1.0,
                 upperbound=100.0,
                 width=self.right_width,
@@ -238,8 +238,8 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
             )
             self.cpu_percent.scale = 0.1
             self.used_host_memory.scale = 1.0
-            self.used_gpu_memory.scale = 1.0
-            self.gpu_sm_utilization.scale = 1.0
+            self.used_npu_memory.scale = 1.0
+            self.npu_sm_utilization.scale = 1.0
 
             self._daemon_running.set()
             try:
@@ -257,8 +257,8 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
             self.enabled = False
             self.cpu_percent = None
             self.used_host_memory = None
-            self.used_gpu_memory = None
-            self.gpu_sm_utilization = None
+            self.used_npu_memory = None
+            self.npu_sm_utilization = None
 
     @property
     def process(self):
@@ -281,15 +281,15 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
             if not self.selection.is_set() or not self.enabled:
                 return
 
-            with GpuProcess.failsafe():
+            with NpuProcess.failsafe():
                 self.process.device.as_snapshot()
-                self.process.update_gpu_status()
+                self.process.update_npu_status()
                 snapshot = self.process.as_snapshot()
 
                 self.cpu_percent.add(snapshot.cpu_percent)
                 self.used_host_memory.add(snapshot.host_memory)
-                self.used_gpu_memory.add(snapshot.gpu_memory)
-                self.gpu_sm_utilization.add(snapshot.gpu_sm_utilization)
+                self.used_npu_memory.add(snapshot.npu_memory)
+                self.npu_sm_utilization.add(snapshot.npu_sm_utilization)
 
     def _snapshot_target(self):
         while True:
@@ -312,8 +312,8 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
             if self.enabled:
                 self.cpu_percent.graph_size = (self.left_width, self.upper_height)
                 self.used_host_memory.graph_size = (self.left_width, self.lower_height)
-                self.used_gpu_memory.graph_size = (self.right_width, self.upper_height)
-                self.gpu_sm_utilization.graph_size = (self.right_width, self.lower_height)
+                self.used_npu_memory.graph_size = (self.right_width, self.upper_height)
+                self.npu_sm_utilization.graph_size = (self.right_width, self.lower_height)
 
         return termsize
 
@@ -322,7 +322,7 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
         return [
             '╒' + '═' * (self.width - 2) + '╕',
             '│ {} │'.format('Process:'.ljust(self.width - 4)),
-            '│ {} │'.format('GPU'.ljust(self.width - 4)),
+            '│ {} │'.format('NPU'.ljust(self.width - 4)),
             '╞' + '═' * (self.width - 2) + '╡',
             '│' + ' ' * (self.width - 2) + '│',
             '╞' + '═' * self.left_width + '╤' + '═' * self.right_width + '╡',
@@ -399,7 +399,7 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
             process = self.process.snapshot
             columns = OrderedDict(
                 [
-                    (' GPU', self.process.device.display_index.rjust(4)),
+                    (' NPU', self.process.device.display_index.rjust(4)),
                     ('PID  ', f'{str(process.pid).rjust(3)} {process.type}'),
                     (
                         'USER',
@@ -411,11 +411,11 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
                             ),
                         ),
                     ),
-                    (' GPU-MEM', process.gpu_memory_human.rjust(8)),
-                    (' %SM', str(process.gpu_sm_utilization).rjust(4)),
-                    ('%GMBW', str(process.gpu_memory_utilization).rjust(5)),
-                    ('%ENC', str(process.gpu_encoder_utilization).rjust(4)),
-                    ('%DEC', str(process.gpu_encoder_utilization).rjust(4)),
+                    (' NPU-MEM', process.npu_memory_human.rjust(8)),
+                    (' %SM', str(process.npu_sm_utilization).rjust(4)),
+                    ('%GMBW', str(process.npu_memory_utilization).rjust(5)),
+                    ('%ENC', str(process.npu_encoder_utilization).rjust(4)),
+                    ('%DEC', str(process.npu_encoder_utilization).rjust(4)),
                     ('  %CPU', process.cpu_percent_string.rjust(6)),
                     (' %MEM', process.memory_percent_string.rjust(5)),
                     (' TIME', (' ' + process.running_time_human).rjust(5)),
@@ -485,11 +485,11 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
                 self.addstr(y, self.x + 1, line)
 
             if self.TERM_256COLOR:
-                scale = (self.used_gpu_memory.bound / self.used_gpu_memory.max_bound) / (
+                scale = (self.used_npu_memory.bound / self.used_npu_memory.max_bound) / (
                     self.upper_height - 1
                 )
                 for i, (y, line) in enumerate(
-                    enumerate(self.used_gpu_memory.graph, start=self.y + 6),
+                    enumerate(self.used_npu_memory.graph, start=self.y + 6),
                 ):
                     self.addstr(
                         y,
@@ -498,11 +498,11 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
                         self.get_fg_bg_attr(fg=(self.upper_height - i - 1) * scale),
                     )
 
-                scale = (self.gpu_sm_utilization.bound / self.gpu_sm_utilization.max_bound) / (
+                scale = (self.npu_sm_utilization.bound / self.npu_sm_utilization.max_bound) / (
                     self.lower_height - 1
                 )
                 for i, (y, line) in enumerate(
-                    enumerate(self.gpu_sm_utilization.graph, start=self.y + self.upper_height + 7),
+                    enumerate(self.npu_sm_utilization.graph, start=self.y + self.upper_height + 7),
                 ):
                     self.addstr(
                         y,
@@ -512,12 +512,12 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
                     )
             else:
                 self.color(fg=self.process.device.snapshot.memory_display_color)
-                for y, line in enumerate(self.used_gpu_memory.graph, start=self.y + 6):
+                for y, line in enumerate(self.used_npu_memory.graph, start=self.y + 6):
                     self.addstr(y, self.x + self.left_width + 2, line)
 
-                self.color(fg=self.process.device.snapshot.gpu_display_color)
+                self.color(fg=self.process.device.snapshot.npu_display_color)
                 for y, line in enumerate(
-                    self.gpu_sm_utilization.graph,
+                    self.npu_sm_utilization.graph,
                     start=self.y + self.upper_height + 7,
                 ):
                     self.addstr(y, self.x + self.left_width + 2, line)
@@ -546,22 +546,22 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
                 self.x + self.left_width + 2,
                 ' {} '.format(
                     cut_string(
-                        self.used_gpu_memory.max_value_string(),
+                        self.used_npu_memory.max_value_string(),
                         maxlen=self.right_width - 2,
                         padstr='..',
                     ),
                 ),
             )
-            self.addstr(self.y + 7, self.x + self.left_width + 6, f' {self.used_gpu_memory} ')
+            self.addstr(self.y + 7, self.x + self.left_width + 6, f' {self.used_npu_memory} ')
             self.addstr(
                 self.y + self.upper_height + self.lower_height + 5,
                 self.x + self.left_width + 6,
-                f' {self.gpu_sm_utilization} ',
+                f' {self.npu_sm_utilization} ',
             )
             self.addstr(
                 self.y + self.upper_height + self.lower_height + 6,
                 self.x + self.left_width + 2,
-                f' {self.gpu_sm_utilization.max_value_string()} ',
+                f' {self.npu_sm_utilization.max_value_string()} ',
             )
 
             for y in range(self.y + 6, self.y + 6 + self.upper_height):
@@ -583,8 +583,8 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
                 self.color_at(y, self.x, width=2, attr=0)
             x = self.x + self.left_width + 1
             for y, p in itertools.chain(
-                get_yticks(self.used_gpu_memory, self.y + 6),
-                get_yticks(self.gpu_sm_utilization, self.y + self.upper_height + 7),
+                get_yticks(self.used_npu_memory, self.y + 6),
+                get_yticks(self.npu_sm_utilization, self.y + self.upper_height + 7),
             ):
                 self.addstr(y, x, f'├╴{p}% ')
                 self.color_at(y, x, width=2, attr=0)

@@ -1,4 +1,4 @@
-# This file is part of nputop, the interactive NVIDIA-GPU process viewer.
+# This file is part of nputop, the interactive NVIDIA-NPU process viewer.
 #
 # Copyright 2021-2024 Xuehai Pan. All Rights Reserved.
 #
@@ -28,7 +28,7 @@ from nputop.api.device import (
     parse_cuda_visible_devices,
 )
 from nputop.api.libnvml import NVMLError, nvmlCheckReturn
-from nputop.api.process import GpuProcess, HostProcess, command_join
+from nputop.api.process import NpuProcess, HostProcess, command_join
 from nputop.api.utils import (  # explicitly export these to appease mypy
     NA,
     SIZE_UNITS,
@@ -68,7 +68,7 @@ __all__ = [
     # nputop.api.process
     'host',
     'HostProcess',
-    'GpuProcess',
+    'NpuProcess',
     'command_join',
     # nputop.api.collector
     'take_snapshots',

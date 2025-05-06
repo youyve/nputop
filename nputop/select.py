@@ -1,4 +1,4 @@
-# This file is part of nputop, the interactive NVIDIA-GPU process viewer.
+# This file is part of nputop, the interactive NVIDIA-NPU process viewer.
 #
 # Copyright 2021-2024 Xuehai Pan. All Rights Reserved.
 #
@@ -27,7 +27,7 @@ Command line usage:
     nvisel -n 4  # or use `python3 -m nputop.select -n 4`
 
     # Select available devices that satisfy the given constraints
-    nvisel --min-count 2 --max-count 3 --min-free-memory 5GiB --max-gpu-utilization 60
+    nvisel --min-count 2 --max-count 3 --min-free-memory 5GiB --max-npu-utilization 60
 
     # Set `CUDA_VISIBLE_DEVICES` environment variable using `nvisel`
     export CUDA_DEVICE_ORDER="PCI_BUS_ID" CUDA_VISIBLE_DEVICES="$(nvisel -c 1 -f 10GiB)"
@@ -36,7 +36,7 @@ Command line usage:
     export CUDA_VISIBLE_DEVICES="$(nvisel -O uuid -c 2 -f 5000M)"
 
     # Pipe output to other shell utilities
-    nvisel -0 -O uuid -c 2 -f 4GiB | xargs -0 -I {} nvidia-smi --id={} --query-gpu=index,memory.free --format=csv
+    nvisel -0 -O uuid -c 2 -f 4GiB | xargs -0 -I {} nvidia-smi --id={} --query-npu=index,memory.free --format=csv
 
     # Normalize the `CUDA_VISIBLE_DEVICES` environment variable (e.g. convert UUIDs to indices or get full UUIDs for an abbreviated form)
     nvisel -i -S
@@ -64,7 +64,7 @@ import sys
 import warnings
 from typing import TYPE_CHECKING, Callable, Iterable, Sequence, overload
 
-from nputop.api import Device, GpuProcess, Snapshot, colored, host, human2bytes, libnvml
+from nputop.api import Device, NpuProcess, Snapshot, colored, host, human2bytes, libnvml
 from nputop.version import __version__
 
 
@@ -85,7 +85,7 @@ def select_devices(  # pylint: disable=too-many-arguments
     max_count: int | None,
     min_free_memory: int | str | None,
     min_total_memory: int | str | None,
-    max_gpu_utilization: int | None,
+    max_npu_utilization: int | None,
     max_memory_utilization: int | None,
     tolerance: int,
     free_accounts: list[str] | None,
@@ -103,7 +103,7 @@ def select_devices(  # pylint: disable=too-many-arguments
     max_count: int | None,
     min_free_memory: int | str | None,
     min_total_memory: int | str | None,
-    max_gpu_utilization: int | None,
+    max_npu_utilization: int | None,
     max_memory_utilization: int | None,
     tolerance: int,
     free_accounts: list[str] | None,
@@ -121,7 +121,7 @@ def select_devices(  # pylint: disable=too-many-arguments
     max_count: int | None,
     min_free_memory: int | str | None,
     min_total_memory: int | str | None,
-    max_gpu_utilization: int | None,
+    max_npu_utilization: int | None,
     max_memory_utilization: int | None,
     tolerance: int,
     free_accounts: list[str] | None,
@@ -139,7 +139,7 @@ def select_devices(
     max_count: int | None = None,
     min_free_memory: int | str | None = None,  # in bytes or human readable
     min_total_memory: int | str | None = None,  # in bytes or human readable
-    max_gpu_utilization: int | None = None,  # in percentage
+    max_npu_utilization: int | None = None,  # in percentage
     max_memory_utilization: int | None = None,  # in percentage
     tolerance: int = 0,  # in percentage
     free_accounts: list[str] | None = None,
@@ -182,16 +182,16 @@ def select_devices(
         min_total_memory (Optional[Union[int, str]]):
             The minimum total memory (an :class:`int` *in bytes* or a :class:`str` in human readable
             form) of the selected devices.
-        max_gpu_utilization (Optional[int]):
-            The maximum GPU utilization rate (*in percentage*) of the selected devices.
+        max_npu_utilization (Optional[int]):
+            The maximum NPU utilization rate (*in percentage*) of the selected devices.
         max_memory_utilization (Optional[int]):
             The maximum memory bandwidth utilization rate (*in percentage*) of the selected devices.
         tolerance (int):
             The tolerance rate (*in percentage*) to loose the constraints.
         free_accounts (List[str]):
-            A list of accounts whose used GPU memory needs be considered as free memory.
+            A list of accounts whose used NPU memory needs be considered as free memory.
         sort (bool):
-            If :data:`True`, sort the selected devices by memory usage and GPU utilization.
+            If :data:`True`, sort the selected devices by memory usage and NPU utilization.
 
     Returns:
         A list of the device identifiers.
@@ -222,12 +222,12 @@ def select_devices(
         device.loosen_constraints = 0  # type: ignore[attr-defined]
 
     if len(free_accounts) > 0:
-        with GpuProcess.failsafe():
+        with NpuProcess.failsafe():
             for device in available_devices:
                 as_free_memory = 0
                 for process in device.real.processes().values():
                     if process.username() in free_accounts:
-                        as_free_memory += process.gpu_memory()
+                        as_free_memory += process.npu_memory()
                 device.memory_free += as_free_memory  # type: ignore[attr-defined]
                 device.memory_used -= as_free_memory  # type: ignore[attr-defined]
 
@@ -259,12 +259,12 @@ def select_devices(
             ),
             available_devices,
         )
-    if max_gpu_utilization is not None:
-        loosen_max_gpu_utilization = max_gpu_utilization + 100.0 * tolerance
+    if max_npu_utilization is not None:
+        loosen_max_npu_utilization = max_npu_utilization + 100.0 * tolerance
         available_devices = filter(  # type: ignore[assignment]
             filter_func(
-                lambda device: device.gpu_utilization <= loosen_max_gpu_utilization,
-                lambda device: device.gpu_utilization <= max_gpu_utilization,
+                lambda device: device.npu_utilization <= loosen_max_npu_utilization,
+                lambda device: device.npu_utilization <= max_npu_utilization,
             ),
             available_devices,
         )
@@ -285,9 +285,9 @@ def select_devices(
                 device.loosen_constraints,
                 (not math.isnan(device.memory_free), -device.memory_free),  # descending
                 (not math.isnan(device.memory_used), -device.memory_used),  # descending
-                (not math.isnan(device.gpu_utilization), device.gpu_utilization),  # ascending
+                (not math.isnan(device.npu_utilization), device.npu_utilization),  # ascending
                 (not math.isnan(device.memory_utilization), device.memory_utilization),  # ascending
-                -device.physical_index,  # descending to keep <GPU 0> free
+                -device.physical_index,  # descending to keep <NPU 0> free
             ),
         )
 
@@ -366,7 +366,7 @@ def parse_arguments() -> argparse.Namespace:
         nargs='*',
         metavar='USERNAME',
         help=(
-            'Account the used GPU memory of the given users as free memory.\n'
+            'Account the used NPU memory of the given users as free memory.\n'
             'If this option is specified but without argument, `$USER` will be used.'
         ),
     )
@@ -424,14 +424,14 @@ def parse_arguments() -> argparse.Namespace:
         ),
     )
     constraints.add_argument(
-        '--max-gpu-utilization',
+        '--max-npu-utilization',
         '-G',
-        dest='max_gpu_utilization',
+        dest='max_npu_utilization',
         type=non_negint,
         default=None,
         metavar='RATE',
         help=(
-            'Maximum GPU utilization rate of devices to select. (example value: 30)\n'
+            'Maximum NPU utilization rate of devices to select. (example value: 30)\n'
             'If this constraint is given, check against all devices.'
         ),
     )
@@ -508,7 +508,7 @@ def parse_arguments() -> argparse.Namespace:
         '-S',
         dest='sort',
         action='store_false',
-        help='Do not sort the device by memory usage and GPU utilization.',
+        help='Do not sort the device by memory usage and NPU utilization.',
     )
 
     args = parser.parse_args()

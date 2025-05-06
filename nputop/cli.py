@@ -1,7 +1,7 @@
-# This file is part of nputop, the interactive NVIDIA-GPU process viewer.
+# This file is part of nputop, the interactive NVIDIA-NPU process viewer.
 # License: GNU GPL version 3.
 
-"""The interactive NVIDIA-GPU process viewer."""
+"""The interactive NVIDIA-NPU process viewer."""
 
 import argparse
 import curses
@@ -42,7 +42,7 @@ def parse_arguments() -> argparse.Namespace:
 
     parser = argparse.ArgumentParser(
         prog='nputop',
-        description='An interactive NVIDIA-GPU process viewer.',
+        description='An interactive NVIDIA-NPU process viewer.',
         formatter_class=argparse.RawTextHelpFormatter,
         add_help=False,
     )
@@ -129,18 +129,18 @@ def parse_arguments() -> argparse.Namespace:
             'Set variable `nputop_MONITOR_MODE="light"` on light terminals for convenience.'
         ),
     )
-    gpu_thresholds = Device.GPU_UTILIZATION_THRESHOLDS
+    npu_thresholds = Device.NPU_UTILIZATION_THRESHOLDS
     coloring.add_argument(
-        '--gpu-util-thresh',
+        '--npu-util-thresh',
         type=int,
         nargs=2,
         choices=range(1, 100),
         metavar=('th1', 'th2'),
         help=(
-            'Thresholds of GPU utilization to determine the load intensity.\n'
+            'Thresholds of NPU utilization to determine the load intensity.\n'
             'Coloring rules: {}.\n'
             '( 1 <= th1 < th2 <= 99, defaults: {} {} )'
-        ).format(coloring_rules, *gpu_thresholds),
+        ).format(coloring_rules, *npu_thresholds),
     )
     memory_thresholds = Device.MEMORY_UTILIZATION_THRESHOLDS
     coloring.add_argument(
@@ -150,7 +150,7 @@ def parse_arguments() -> argparse.Namespace:
         choices=range(1, 100),
         metavar=('th1', 'th2'),
         help=(
-            'Thresholds of GPU memory percent to determine the load intensity.\n'
+            'Thresholds of NPU memory percent to determine the load intensity.\n'
             'Coloring rules: {}.\n'
             '( 1 <= th1 < th2 <= 99, defaults: {} {} )'
         ).format(coloring_rules, *memory_thresholds),
@@ -180,28 +180,28 @@ def parse_arguments() -> argparse.Namespace:
         '-c',
         dest='compute',
         action='store_true',
-        help="Only show GPU processes with the compute context. (type: 'C' or 'C+G')",
+        help="Only show NPU processes with the compute context. (type: 'C' or 'C+G')",
     )
     process_filtering.add_argument(
         '--only-compute',
         '-C',
         dest='only_compute',
         action='store_true',
-        help="Only show GPU processes exactly with the compute context. (type: 'C' only)",
+        help="Only show NPU processes exactly with the compute context. (type: 'C' only)",
     )
     process_filtering.add_argument(
         '--graphics',
         '-g',
         dest='graphics',
         action='store_true',
-        help="Only show GPU processes with the graphics context. (type: 'G' or 'C+G')",
+        help="Only show NPU processes with the graphics context. (type: 'G' or 'C+G')",
     )
     process_filtering.add_argument(
         '--only-graphics',
         '-G',
         dest='only_graphics',
         action='store_true',
-        help="Only show GPU processes exactly with the graphics context. (type: 'G' only)",
+        help="Only show NPU processes exactly with the graphics context. (type: 'G' only)",
     )
     process_filtering.add_argument(
         '--user',
@@ -236,20 +236,20 @@ def parse_arguments() -> argparse.Namespace:
         args.light = 'light' in nputop_MONITOR_MODE and 'dark' not in nputop_MONITOR_MODE
     if args.user is not None and len(args.user) == 0:
         args.user.append(USERNAME)
-    if args.gpu_util_thresh is None:
+    if args.npu_util_thresh is None:
         try:
-            gpu_util_thresh = list(
-                map(int, os.getenv('nputop_GPU_UTILIZATION_THRESHOLDS', '').split(',')),
+            npu_util_thresh = list(
+                map(int, os.getenv('nputop_NPU_UTILIZATION_THRESHOLDS', '').split(',')),
             )[:2]
         except ValueError:
             pass
         else:
             if (
-                len(gpu_util_thresh) == 2
-                and min(gpu_util_thresh) > 0
-                and max(gpu_util_thresh) < 100
+                len(npu_util_thresh) == 2
+                and min(npu_util_thresh) > 0
+                and max(npu_util_thresh) < 100
             ):
-                args.gpu_util_thresh = gpu_util_thresh
+                args.npu_util_thresh = npu_util_thresh
     if args.mem_util_thresh is None:
         try:
             mem_util_thresh = list(
@@ -307,8 +307,8 @@ def main() -> int:
         )
         return 1
 
-    if args.gpu_util_thresh is not None:
-        Device.GPU_UTILIZATION_THRESHOLDS = tuple(sorted(args.gpu_util_thresh))
+    if args.npu_util_thresh is not None:
+        Device.NPU_UTILIZATION_THRESHOLDS = tuple(sorted(args.npu_util_thresh))
     if args.mem_util_thresh is not None:
         Device.MEMORY_UTILIZATION_THRESHOLDS = tuple(sorted(args.mem_util_thresh))
 

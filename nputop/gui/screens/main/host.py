@@ -1,4 +1,4 @@
-# This file is part of nputop, the interactive NVIDIA-GPU process viewer.
+# This file is part of nputop, the interactive NVIDIA-NPU process viewer.
 # License: GNU GPL version 3.
 
 # pylint: disable=missing-module-docstring,missing-class-docstring,missing-function-docstring
@@ -31,8 +31,8 @@ class HostPanel(Displayable):  # pylint: disable=too-many-instance-attributes
         self.device_count = len(self.devices)
 
         if win is not None:
-            self.average_gpu_memory_percent = None
-            self.average_gpu_utilization = None
+            self.average_npu_memory_percent = None
+            self.average_npu_utilization = None
             self.enable_history()
 
         self._compact = compact
@@ -64,11 +64,11 @@ class HostPanel(Displayable):  # pylint: disable=too-many-instance-attributes
                 self.need_redraw = True
             graph_width = max(width - 80, 20)
             if self.win is not None:
-                self.average_gpu_memory_percent.width = graph_width
-                self.average_gpu_utilization.width = graph_width
+                self.average_npu_memory_percent.width = graph_width
+                self.average_npu_utilization.width = graph_width
                 for device in self.devices:
                     device.memory_percent.history.width = graph_width
-                    device.gpu_utilization.history.width = graph_width
+                    device.npu_utilization.history.width = graph_width
         self._width = width
 
     @property
@@ -127,9 +127,9 @@ class HostPanel(Displayable):  # pylint: disable=too-many-instance-attributes
                 baseline=0.0,
                 upperbound=100.0,
                 dynamic_bound=False,
-                format=lambda x: f'GPU {device.display_index} MEM: {percentage(x)}',
+                format=lambda x: f'NPU {device.display_index} MEM: {percentage(x)}',
             )(device.memory_percent)
-            device.gpu_utilization = BufferedHistoryGraph(
+            device.npu_utilization = BufferedHistoryGraph(
                 interval=1.0,
                 width=20,
                 height=5,
@@ -137,14 +137,14 @@ class HostPanel(Displayable):  # pylint: disable=too-many-instance-attributes
                 baseline=0.0,
                 upperbound=100.0,
                 dynamic_bound=False,
-                format=lambda x: f'GPU {device.display_index} UTL: {percentage(x)}',
-            )(device.gpu_utilization)
+                format=lambda x: f'NPU {device.display_index} UTL: {percentage(x)}',
+            )(device.npu_utilization)
 
         for device in self.devices:
             enable_history(device)
 
         prefix = 'AVG ' if self.device_count > 1 else ''
-        self.average_gpu_memory_percent = BufferedHistoryGraph(
+        self.average_npu_memory_percent = BufferedHistoryGraph(
             interval=1.0,
             width=20,
             height=5,
@@ -152,9 +152,9 @@ class HostPanel(Displayable):  # pylint: disable=too-many-instance-attributes
             baseline=0.0,
             upperbound=100.0,
             dynamic_bound=False,
-            format=lambda x: f'{prefix}GPU MEM: {percentage(x)}',
+            format=lambda x: f'{prefix}NPU MEM: {percentage(x)}',
         )
-        self.average_gpu_utilization = BufferedHistoryGraph(
+        self.average_npu_utilization = BufferedHistoryGraph(
             interval=1.0,
             width=20,
             height=5,
@@ -162,7 +162,7 @@ class HostPanel(Displayable):  # pylint: disable=too-many-instance-attributes
             baseline=0.0,
             upperbound=100.0,
             dynamic_bound=False,
-            format=lambda x: f'{prefix}GPU UTL: {percentage(x)}',
+            format=lambda x: f'{prefix}NPU UTL: {percentage(x)}',
         )
 
     @classmethod
@@ -184,20 +184,20 @@ class HostPanel(Displayable):  # pylint: disable=too-many-instance-attributes
 
         total_memory_used = 0
         total_memory_total = 0
-        gpu_utilizations = []
+        npu_utilizations = []
         for device in self.devices:
             memory_used = device.snapshot.memory_used
             memory_total = device.snapshot.memory_total
-            gpu_utilization = device.snapshot.gpu_utilization
+            npu_utilization = device.snapshot.npu_utilization
             if memory_used is not NA and memory_total is not NA:
                 total_memory_used += memory_used
                 total_memory_total += memory_total
-            if gpu_utilization is not NA:
-                gpu_utilizations.append(float(gpu_utilization))
+            if npu_utilization is not NA:
+                npu_utilizations.append(float(npu_utilization))
         if total_memory_total > 0:
-            self.average_gpu_memory_percent.add(100.0 * total_memory_used / total_memory_total)
-        if len(gpu_utilizations) > 0:
-            self.average_gpu_utilization.add(sum(gpu_utilizations) / len(gpu_utilizations))
+            self.average_npu_memory_percent.add(100.0 * total_memory_used / total_memory_total)
+        if len(npu_utilizations) > 0:
+            self.average_npu_utilization.add(sum(npu_utilizations) / len(npu_utilizations))
 
     def _snapshot_target(self):
         self._daemon_running.wait()
@@ -339,25 +339,25 @@ class HostPanel(Displayable):  # pylint: disable=too-many-instance-attributes
         if self.width >= 100:
             if self.device_count > 1 and self.parent.selection.is_set():
                 device = self.parent.selection.process.device
-                gpu_memory_percent = device.memory_percent.history
-                gpu_utilization = device.gpu_utilization.history
+                npu_memory_percent = device.memory_percent.history
+                npu_utilization = device.npu_utilization.history
             else:
-                gpu_memory_percent = self.average_gpu_memory_percent
-                gpu_utilization = self.average_gpu_utilization
+                npu_memory_percent = self.average_npu_memory_percent
+                npu_utilization = self.average_npu_utilization
 
             if self.TERM_256COLOR:
-                for i, (y, line) in enumerate(enumerate(gpu_memory_percent.graph, start=self.y)):
+                for i, (y, line) in enumerate(enumerate(npu_memory_percent.graph, start=self.y)):
                     self.addstr(y, self.x + 79, line, self.get_fg_bg_attr(fg=1.0 - i / 4.0))
 
-                for i, (y, line) in enumerate(enumerate(gpu_utilization.graph, start=self.y + 6)):
+                for i, (y, line) in enumerate(enumerate(npu_utilization.graph, start=self.y + 6)):
                     self.addstr(y, self.x + 79, line, self.get_fg_bg_attr(fg=i / 4.0))
             else:
-                self.color(fg=Device.color_of(gpu_memory_percent.last_value, type='memory'))
-                for y, line in enumerate(gpu_memory_percent.graph, start=self.y):
+                self.color(fg=Device.color_of(npu_memory_percent.last_value, type='memory'))
+                for y, line in enumerate(npu_memory_percent.graph, start=self.y):
                     self.addstr(y, self.x + 79, line)
 
-                self.color(fg=Device.color_of(gpu_utilization.last_value, type='gpu'))
-                for y, line in enumerate(gpu_utilization.graph, start=self.y + 6):
+                self.color(fg=Device.color_of(npu_utilization.last_value, type='npu'))
+                for y, line in enumerate(npu_utilization.graph, start=self.y + 6):
                     self.addstr(y, self.x + 79, line)
 
         self.color_reset()
@@ -374,8 +374,8 @@ class HostPanel(Displayable):  # pylint: disable=too-many-instance-attributes
             f' SWP: {bytes2human(self.swap_memory.used, min_unit=GiB)} ({host.swap_memory.history}) ',
         )
         if self.width >= 100:
-            self.addstr(self.y, self.x + 79, f' {gpu_memory_percent} ')
-            self.addstr(self.y + 10, self.x + 79, f' {gpu_utilization} ')
+            self.addstr(self.y, self.x + 79, f' {npu_memory_percent} ')
+            self.addstr(self.y + 10, self.x + 79, f' {npu_utilization} ')
 
     def destroy(self):
         super().destroy()

@@ -1,4 +1,4 @@
-# This file is part of nputop, the interactive NVIDIA-GPU process viewer.
+# This file is part of nputop, the interactive NVIDIA-NPU process viewer.
 # License: GNU GPL version 3.
 
 # pylint: disable=missing-module-docstring,missing-class-docstring,missing-function-docstring
@@ -69,17 +69,17 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
         self.formats_compact = [
             '│ {physical_index:>3} {fan_speed_string:>3} {temperature_string:>4} '
             '{performance_state:>3} {power_status:>12} '
-            '│ {memory_usage:>20} │ {gpu_utilization_string:>7}  {compute_mode:>11} │',
+            '│ {memory_usage:>20} │ {npu_utilization_string:>7}  {compute_mode:>11} │',
         ]
         self.formats_full = [
             '│ {physical_index:>3}  {name:<18}  {persistence_mode:<4} '
             '│ {bus_id:<16} {display_active:>3} │ {total_volatile_uncorrected_ecc_errors:>20} │',
             '│ {fan_speed_string:>3}  {temperature_string:>4}  {performance_state:>4}  {power_status:>12} '
-            '│ {memory_usage:>20} │ {gpu_utilization_string:>7}  {compute_mode:>11} │',
+            '│ {memory_usage:>20} │ {npu_utilization_string:>7}  {compute_mode:>11} │',
         ]
 
         self.mig_formats = [
-            '│{physical_index:>2}:{mig_index:<2}{name:>12} @ GI/CI:{gpu_instance_id:>2}/{compute_instance_id:<2}'
+            '│{physical_index:>2}:{mig_index:<2}{name:>12} @ GI/CI:{npu_instance_id:>2}/{compute_instance_id:<2}'
             '│ {memory_usage:>20} │ BAR1: {bar1_memory_used_human:>8} / {bar1_memory_percent_string:>3} │',
         ]
 
@@ -202,13 +202,13 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
             )
             if compact:
                 header.append(
-                    '│ GPU Fan Temp Perf Pwr:Usg/Cap │         Memory-Usage │ GPU-Util  Compute M. │',
+                    '│ NPU Fan Temp Perf Pwr:Usg/Cap │         Memory-Usage │ NPU-Util  Compute M. │',
                 )
             else:
                 header.extend(
                     (
-                        '│ GPU  Name        Persistence-M│ Bus-Id        Disp.A │ Volatile Uncorr. ECC │',
-                        '│ Fan  Temp  Perf  Pwr:Usage/Cap│         Memory-Usage │ GPU-Util  Compute M. │',
+                        '│ NPU  Name        Persistence-M│ Bus-Id        Disp.A │ Volatile Uncorr. ECC │',
+                        '│ Fan  Temp  Perf  Pwr:Usage/Cap│         Memory-Usage │ NPU-Util  Compute M. │',
                     ),
                 )
                 if host.WINDOWS:
@@ -337,8 +337,8 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
                         y_start + 1,
                         remaining_width - 3,
                         'UTL',
-                        device.gpu_utilization,
-                        device.gpu_display_color,
+                        device.npu_utilization,
+                        device.npu_display_color,
                     ),
                 ]
                 if self.compact:
@@ -359,8 +359,8 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
                                 y_start,
                                 right_width,
                                 'UTL',
-                                device.gpu_utilization,
-                                device.gpu_display_color,
+                                device.npu_utilization,
+                                device.npu_display_color,
                             ),
                         ]
                         separator = '┼' if index > 0 else '╤'
@@ -462,8 +462,8 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
                         ),
                         (
                             'UTL',
-                            device.gpu_utilization,
-                            device.gpu_display_color,
+                            device.npu_utilization,
+                            device.npu_display_color,
                         ),
                     ]
                     if device.is_mig_device:

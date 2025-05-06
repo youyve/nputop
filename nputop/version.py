@@ -1,4 +1,4 @@
-"""An interactive NVIDIA-GPU process viewer and beyond, the one-stop solution for GPU process management."""
+"""An interactive NVIDIA-NPU process viewer and beyond, the one-stop solution for NPU process management."""
 
 # pylint: disable=invalid-name
 
@@ -89,7 +89,7 @@ Note:
 
     ``nvidia-ml-py==11.450.51`` is the last version supports the NVIDIA R430 driver (CUDA 10.x).
     Since ``nvidia-ml-py>=11.450.129``, the definition of struct ``nvmlProcessInfo_t`` has introduced
-    two new fields ``gpuInstanceId`` and ``computeInstanceId`` (GI ID and CI ID in newer ``nvidia-smi``)
+    two new fields ``npuInstanceId`` and ``computeInstanceId`` (GI ID and CI ID in newer ``nvidia-smi``)
     which are incompatible with some old NVIDIA drivers. ``nputop`` may not display the processes
     correctly due to this incompatibility.
 """

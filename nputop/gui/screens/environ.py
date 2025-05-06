@@ -1,4 +1,4 @@
-# This file is part of nputop, the interactive NVIDIA-GPU process viewer.
+# This file is part of nputop, the interactive NVIDIA-NPU process viewer.
 # License: GNU GPL version 3.
 
 # pylint: disable=missing-module-docstring,missing-class-docstring,missing-function-docstring
@@ -7,7 +7,7 @@ from collections import OrderedDict
 from functools import partial
 from itertools import islice
 
-from nputop.gui.library import Displayable, GpuProcess, HostProcess, WideString, host
+from nputop.gui.library import Displayable, NpuProcess, HostProcess, WideString, host
 
 
 class EnvironScreen(Displayable):  # pylint: disable=too-many-instance-attributes
@@ -145,8 +145,8 @@ class EnvironScreen(Displayable):  # pylint: disable=too-many-instance-attribute
     def draw(self):
         self.color_reset()
 
-        if isinstance(self.process, GpuProcess):
-            process_type = 'GPU: ' + self.process.type.replace('C', 'Compute').replace(
+        if isinstance(self.process, NpuProcess):
+            process_type = 'NPU: ' + self.process.type.replace('C', 'Compute').replace(
                 'G',
                 'Graphics',
             )

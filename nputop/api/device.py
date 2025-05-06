@@ -1,4 +1,4 @@
-# This file is part of nputop, the interactive NVIDIA-GPU process viewer.
+# This file is part of nputop, the interactive NVIDIA-NPU process viewer.
 #
 # Copyright 2021-2024 Xuehai Pan. All Rights Reserved.
 #
@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""The live classes for GPU devices.
+"""The live classes for NPU devices.
 
 The core classes are :class:`Device` and :class:`CudaDevice` (also aliased as :attr:`Device.cuda`).
 The type of returned instance created by ``Class(args)`` is depending on the given arguments.
@@ -42,7 +42,7 @@ Examples:
     >>> Device.driver_version()              # version of the installed NVIDIA display driver
     '470.129.06'
 
-    >>> Device.count()                       # number of NVIDIA GPUs in the system
+    >>> Device.count()                       # number of NVIDIA NPUs in the system
     10
 
     >>> Device.all()                         # all physical devices in the system
@@ -54,7 +54,7 @@ Examples:
 
     >>> nvidia0 = Device(index=0)            # -> PhysicalDevice
     >>> mig10   = Device(index=(1, 0))       # -> MigDevice
-    >>> nvidia2 = Device(uuid='GPU-xxxxxx')  # -> PhysicalDevice
+    >>> nvidia2 = Device(uuid='NPU-xxxxxx')  # -> PhysicalDevice
     >>> mig30   = Device(uuid='MIG-xxxxxx')  # -> MigDevice
 
     >>> nvidia0.memory_free()                # total free memory in bytes
@@ -72,7 +72,7 @@ Examples:
     >>> os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     >>> os.environ['CUDA_VISIBLE_DEVICES'] = '3,2,1,0'
 
-    >>> CudaDevice.count()                     # number of NVIDIA GPUs visible to CUDA applications
+    >>> CudaDevice.count()                     # number of NVIDIA NPUs visible to CUDA applications
     4
     >>> Device.cuda.count()                    # use alias in class `Device`
     4
@@ -86,7 +86,7 @@ Examples:
 
     >>> cuda0 = CudaDevice(cuda_index=0)       # use CUDA ordinal (or `Device.cuda(0)`)
     >>> cuda1 = CudaDevice(nvml_index=2)       # use NVML ordinal
-    >>> cuda2 = CudaDevice(uuid='GPU-xxxxxx')  # use UUID string
+    >>> cuda2 = CudaDevice(uuid='NPU-xxxxxx')  # use UUID string
 
     >>> cuda0.memory_free()                    # total free memory in bytes
     11550654464
@@ -118,7 +118,7 @@ from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, Generator, Iterable, NamedTuple, overload
 
 from nputop.api import libnvml
-from nputop.api.process import GpuProcess
+from nputop.api.process import NpuProcess
 from nputop.api.utils import (
     NA,
     UINT_MAX,
@@ -169,7 +169,7 @@ class ClockSpeedInfos(NamedTuple):  # pylint: disable=missing-class-docstring
 
 
 class UtilizationRates(NamedTuple):  # in percentage # pylint: disable=missing-class-docstring
-    gpu: int | NaType
+    npu: int | NaType
     memory: int | NaType
     encoder: int | NaType
     decoder: int | NaType
@@ -201,7 +201,7 @@ del ValueOmitted
 
 
 class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-methods
-    """Live class of the GPU devices, different from the device snapshots.
+    """Live class of the NPU devices, different from the device snapshots.
 
     :meth:`Device.__new__()` returns different types depending on the given arguments.
 
@@ -216,7 +216,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         >>> Device.driver_version()              # version of the installed NVIDIA display driver
         '470.129.06'
 
-        >>> Device.count()                       # number of NVIDIA GPUs in the system
+        >>> Device.count()                       # number of NVIDIA NPUs in the system
         10
 
         >>> Device.all()                         # all physical devices in the system
@@ -228,7 +228,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         >>> nvidia0 = Device(index=0)            # -> PhysicalDevice
         >>> mig10   = Device(index=(1, 0))       # -> MigDevice
-        >>> nvidia2 = Device(uuid='GPU-xxxxxx')  # -> PhysicalDevice
+        >>> nvidia2 = Device(uuid='NPU-xxxxxx')  # -> PhysicalDevice
         >>> mig30   = Device(uuid='MIG-xxxxxx')  # -> MigDevice
 
         >>> nvidia0.memory_free()                # total free memory in bytes
@@ -262,19 +262,19 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
     # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#env-vars
     # https://docs.nvidia.com/datacenter/tesla/mig-user-guide/index.html#cuda-visible-devices
-    # GPU UUID        : `GPU-<GPU-UUID>`
-    # MIG UUID        : `MIG-GPU-<GPU-UUID>/<GPU instance ID>/<compute instance ID>`
+    # NPU UUID        : `NPU-<NPU-UUID>`
+    # MIG UUID        : `MIG-NPU-<NPU-UUID>/<NPU instance ID>/<compute instance ID>`
     # MIG UUID (R470+): `MIG-<MIG-UUID>`
     UUID_PATTERN: re.Pattern = re.compile(
         r"""^  # full match
         (?:(?P<MigMode>MIG)-)?                                 # prefix for MIG UUID
-        (?:(?P<GpuUuid>GPU)-)?                                 # prefix for GPU UUID
-        (?(MigMode)|(?(GpuUuid)|GPU-))                         # always have a prefix
-        (?P<UUID>[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})  # UUID for the GPU/MIG device in lower case
-        # Suffix for MIG device while using GPU UUID with GPU instance (GI) ID and compute instance (CI) ID
+        (?:(?P<NpuUuid>NPU)-)?                                 # prefix for NPU UUID
+        (?(MigMode)|(?(NpuUuid)|NPU-))                         # always have a prefix
+        (?P<UUID>[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})  # UUID for the NPU/MIG device in lower case
+        # Suffix for MIG device while using NPU UUID with NPU instance (GI) ID and compute instance (CI) ID
         (?(MigMode)                                            # match only when the MIG prefix matches
-            (?(GpuUuid)                                        # match only when provide with GPU UUID
-                /(?P<GpuInstanceId>\d+)                        # GI ID of the MIG device
+            (?(NpuUuid)                                        # match only when provide with NPU UUID
+                /(?P<NpuInstanceId>\d+)                        # GI ID of the MIG device
                 /(?P<ComputeInstanceId>\d+)                    # CI ID of the MIG device
             |)
         |)
@@ -282,7 +282,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         flags=re.VERBOSE,
     )
 
-    GPU_PROCESS_CLASS: type[GpuProcess] = GpuProcess
+    NPU_PROCESS_CLASS: type[NpuProcess] = NpuProcess
     cuda: type[CudaDevice] = None  # type: ignore[assignment] # defined in below
     """Shortcut for class :class:`CudaDevice`."""
 
@@ -304,7 +304,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=0 --format=csv,noheader,nounits --query-gpu=driver_version
+            nvidia-smi --id=0 --format=csv,noheader,nounits --query-npu=driver_version
 
         Raises:
             libnvml.NVMLError_LibraryNotFound:
@@ -366,13 +366,13 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
     @classmethod
     def count(cls) -> int:
-        """The number of NVIDIA GPUs in the system.
+        """The number of NVIDIA NPUs in the system.
 
         Command line equivalent:
 
         .. code:: bash
 
-            nvidia-smi --id=0 --format=csv,noheader,nounits --query-gpu=count
+            nvidia-smi --id=0 --format=csv,noheader,nounits --query-npu=count
 
         Raises:
             libnvml.NVMLError_LibraryNotFound:
@@ -470,7 +470,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         Args:
             cuda_indices (Iterable[int]):
-                The indices of the GPU in CUDA ordinal, if not given, returns all visible CUDA devices.
+                The indices of the NPU in CUDA ordinal, if not given, returns all visible CUDA devices.
 
         Returns: List[CudaDevice]
             A list of :class:`CudaDevice` of the given CUDA indices.
@@ -552,7 +552,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
                 environment variable will be unset before parsing.
 
         Returns: str
-            The comma-separated string (GPU UUIDs) of the ``CUDA_VISIBLE_DEVICES`` environment variable.
+            The comma-separated string (NPU UUIDs) of the ``CUDA_VISIBLE_DEVICES`` environment variable.
         """  # pylint: disable=line-too-long
         return normalize_cuda_visible_devices(cuda_visible_devices)
 
@@ -671,9 +671,9 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
                     index,
                     ignore_errors=False,
                 )
-            except libnvml.NVMLError_GpuIsLost:
+            except libnvml.NVMLError_NpuIsLost:
                 self._handle = None
-                self._name = 'ERROR: GPU is Lost'
+                self._name = 'ERROR: NPU is Lost'
             except libnvml.NVMLError_Unknown:
                 self._handle = None
                 self._name = 'ERROR: Unknown'
@@ -691,10 +691,10 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
                         bus_id,
                         ignore_errors=False,
                     )
-            except libnvml.NVMLError_GpuIsLost:
+            except libnvml.NVMLError_NpuIsLost:
                 self._handle = None
                 self._nvml_index = NA  # type: ignore[assignment]
-                self._name = 'ERROR: GPU is Lost'
+                self._name = 'ERROR: NPU is Lost'
             except libnvml.NVMLError_Unknown:
                 self._handle = None
                 self._nvml_index = NA  # type: ignore[assignment]
@@ -854,7 +854,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         return self._cuda_index
 
     def name(self) -> str | NaType:
-        """The official product name of the GPU. This is an alphanumeric string. For all products.
+        """The official product name of the NPU. This is an alphanumeric string. For all products.
 
         Returns: Union[str, NaType]
             The official product name, or :const:`nputop.NA` when not applicable.
@@ -863,14 +863,14 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=name
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=name
         """
         if self._name is NA:
             self._name = libnvml.nvmlQuery('nvmlDeviceGetName', self.handle)
         return self._name
 
     def uuid(self) -> str | NaType:
-        """This value is the globally unique immutable alphanumeric identifier of the GPU.
+        """This value is the globally unique immutable alphanumeric identifier of the NPU.
 
         It does not correspond to any physical label on the board.
 
@@ -881,7 +881,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=name
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=name
         """
         if self._uuid is NA:
             self._uuid = libnvml.nvmlQuery('nvmlDeviceGetUUID', self.handle)
@@ -897,7 +897,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=pci.bus_id
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=pci.bus_id
         """
         if self._bus_id is NA:
             self._bus_id = libnvml.nvmlQuery(
@@ -918,7 +918,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=serial
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=serial
         """
         return libnvml.nvmlQuery('nvmlDeviceGetSerial', self.handle)
 
@@ -935,16 +935,16 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         return MemoryInfo(total=NA, free=NA, used=NA)
 
     def memory_total(self) -> int | NaType:  # in bytes
-        """Total installed GPU memory in bytes.
+        """Total installed NPU memory in bytes.
 
         Returns: Union[int, NaType]
-            Total installed GPU memory in bytes, or :const:`nputop.NA` when not applicable.
+            Total installed NPU memory in bytes, or :const:`nputop.NA` when not applicable.
 
         Command line equivalent:
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=memory.total
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=memory.total
         """
         if self._memory_total is NA:
             self._memory_total = self.memory_info().total
@@ -960,7 +960,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=memory.used
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=memory.used
         """
         return self.memory_info().used
 
@@ -974,15 +974,15 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=memory.free
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=memory.free
         """
         return self.memory_info().free
 
     def memory_total_human(self) -> str | NaType:  # in human readable
-        """Total installed GPU memory in human readable format.
+        """Total installed NPU memory in human readable format.
 
         Returns: Union[str, NaType]
-            Total installed GPU memory in human readable format, or :const:`nputop.NA` when not applicable.
+            Total installed NPU memory in human readable format, or :const:`nputop.NA` when not applicable.
         """
         if self._memory_total_human is NA:
             self._memory_total_human = bytes2human(self.memory_total())
@@ -1114,16 +1114,16 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
     @memoize_when_activated
     def utilization_rates(self) -> UtilizationRates:  # in percentage
-        """Return a named tuple with GPU utilization rates (in percentage) for the device.
+        """Return a named tuple with NPU utilization rates (in percentage) for the device.
 
-        Returns: UtilizationRates(gpu, memory, encoder, decoder)
-            A named tuple with GPU utilization rates (in percentage) for the device, the item could be :const:`nputop.NA` when not applicable.
+        Returns: UtilizationRates(npu, memory, encoder, decoder)
+            A named tuple with NPU utilization rates (in percentage) for the device, the item could be :const:`nputop.NA` when not applicable.
         """  # pylint: disable=line-too-long
-        gpu, memory, encoder, decoder = NA, NA, NA, NA
+        npu, memory, encoder, decoder = NA, NA, NA, NA
 
         utilization_rates = libnvml.nvmlQuery('nvmlDeviceGetUtilizationRates', self.handle)
         if libnvml.nvmlCheckReturn(utilization_rates):
-            gpu, memory = utilization_rates.gpu, utilization_rates.memory
+            npu, memory = utilization_rates.gpu, utilization_rates.memory
 
         encoder_utilization = libnvml.nvmlQuery('nvmlDeviceGetEncoderUtilization', self.handle)
         if libnvml.nvmlCheckReturn(encoder_utilization, list) and len(encoder_utilization) > 0:
@@ -1133,25 +1133,25 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         if libnvml.nvmlCheckReturn(decoder_utilization, list) and len(decoder_utilization) > 0:
             decoder = decoder_utilization[0]
 
-        return UtilizationRates(gpu=gpu, memory=memory, encoder=encoder, decoder=decoder)
+        return UtilizationRates(npu=npu, memory=memory, encoder=encoder, decoder=decoder)
 
-    def gpu_utilization(self) -> int | NaType:  # in percentage
-        """Percent of time over the past sample period during which one or more kernels was executing on the GPU.
+    def npu_utilization(self) -> int | NaType:  # in percentage
+        """Percent of time over the past sample period during which one or more kernels was executing on the NPU.
 
         The sample period may be between 1 second and 1/6 second depending on the product.
 
         Returns: Union[int, NaType]
-            The GPU utilization rate in percentage, or :const:`nputop.NA` when not applicable.
+            The NPU utilization rate in percentage, or :const:`nputop.NA` when not applicable.
 
         Command line equivalent:
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=utilization.gpu
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=utilization.npu
         """
-        return self.utilization_rates().gpu
+        return self.utilization_rates().npu
 
-    gpu_percent = gpu_utilization  # in percentage
+    npu_percent = npu_utilization  # in percentage
 
     def memory_utilization(self) -> int | NaType:  # in percentage
         """Percent of time over the past sample period during which global (device) memory was being read or written.
@@ -1159,13 +1159,13 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         The sample period may be between 1 second and 1/6 second depending on the product.
 
         Returns: Union[int, NaType]
-            The memory bandwidth utilization rate of the GPU in percentage, or :const:`nputop.NA` when not applicable.
+            The memory bandwidth utilization rate of the NPU in percentage, or :const:`nputop.NA` when not applicable.
 
         Command line equivalent:
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=utilization.memory
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=utilization.memory
         """  # pylint: disable=line-too-long
         return self.utilization_rates().memory
 
@@ -1248,7 +1248,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=clocks.current.graphics
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=clocks.current.graphics
         """  # pylint: disable=line-too-long
         return self.clock_infos().graphics
 
@@ -1262,7 +1262,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=clocks.current.sm
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=clocks.current.sm
         """  # pylint: disable=line-too-long
         return self.clock_infos().sm
 
@@ -1276,7 +1276,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=clocks.current.memory
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=clocks.current.memory
         """
         return self.clock_infos().memory
 
@@ -1290,7 +1290,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=clocks.current.video
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=clocks.current.video
         """  # pylint: disable=line-too-long
         return self.clock_infos().video
 
@@ -1304,7 +1304,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=clocks.max.graphics
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=clocks.max.graphics
         """  # pylint: disable=line-too-long
         return self.max_clock_infos().graphics
 
@@ -1318,7 +1318,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=clocks.max.sm
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=clocks.max.sm
         """  # pylint: disable=line-too-long
         return self.max_clock_infos().sm
 
@@ -1332,7 +1332,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=clocks.max.memory
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=clocks.max.memory
         """
         return self.max_clock_infos().memory
 
@@ -1346,7 +1346,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=clocks.max.video
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=clocks.max.video
         """  # pylint: disable=line-too-long
         return self.max_clock_infos().video
 
@@ -1365,21 +1365,21 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=fan.speed
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=fan.speed
         """  # pylint: disable=line-too-long
         return libnvml.nvmlQuery('nvmlDeviceGetFanSpeed', self.handle)
 
     def temperature(self) -> int | NaType:  # in Celsius
-        """Core GPU temperature in degrees C.
+        """Core NPU temperature in degrees C.
 
         Returns: Union[int, NaType]
-            The core GPU temperature in Celsius degrees, or :const:`nputop.NA` when not applicable.
+            The core NPU temperature in Celsius degrees, or :const:`nputop.NA` when not applicable.
 
         Command line equivalent:
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=temperature.gpu
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=temperature.npu
         """
         return libnvml.nvmlQuery(
             'nvmlDeviceGetTemperature',
@@ -1398,7 +1398,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            $(( "$(nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=power.draw)" * 1000 ))
+            $(( "$(nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=power.draw)" * 1000 ))
         """
         return libnvml.nvmlQuery('nvmlDeviceGetPowerUsage', self.handle)
 
@@ -1417,7 +1417,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            $(( "$(nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=power.limit)" * 1000 ))
+            $(( "$(nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=power.limit)" * 1000 ))
         """
         return libnvml.nvmlQuery('nvmlDeviceGetPowerManagementLimit', self.handle)
 
@@ -1510,10 +1510,10 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         return NA
 
     def nvlink_link_count(self) -> int:
-        """The number of NVLinks that the GPU has.
+        """The number of NVLinks that the NPU has.
 
         Returns: Union[int, NaType]
-            The number of NVLinks that the GPU has.
+            The number of NVLinks that the NPU has.
         """
         if self._nvlink_link_count is None:
             ((nvlink_link_count, _),) = libnvml.nvmlQueryFieldValues(
@@ -1966,7 +1966,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         return NA
 
     def display_active(self) -> str | NaType:
-        """A flag that indicates whether a display is initialized on the GPU's (e.g. memory is allocated on the device for display).
+        """A flag that indicates whether a display is initialized on the NPU's (e.g. memory is allocated on the device for display).
 
         Display can be active even when no monitor is physically attached. "Enabled" indicates an
         active display. "Disabled" indicates otherwise.
@@ -1980,7 +1980,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=display_active
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=display_active
         """  # pylint: disable=line-too-long
         return {0: 'Disabled', 1: 'Enabled'}.get(
             libnvml.nvmlQuery('nvmlDeviceGetDisplayActive', self.handle),
@@ -1988,7 +1988,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         )
 
     def display_mode(self) -> str | NaType:
-        """A flag that indicates whether a physical display (e.g. monitor) is currently connected to any of the GPU's connectors.
+        """A flag that indicates whether a physical display (e.g. monitor) is currently connected to any of the NPU's connectors.
 
         "Enabled" indicates an attached display. "Disabled" indicates otherwise.
 
@@ -2001,7 +2001,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=display_mode
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=display_mode
         """  # pylint: disable=line-too-long
         return {0: 'Disabled', 1: 'Enabled'}.get(
             libnvml.nvmlQuery('nvmlDeviceGetDisplayMode', self.handle),
@@ -2026,7 +2026,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=driver_model.current
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=driver_model.current
         """
         return {libnvml.NVML_DRIVER_WDDM: 'WDDM', libnvml.NVML_DRIVER_WDM: 'WDM'}.get(
             libnvml.nvmlQuery('nvmlDeviceGetCurrentDriverModel', self.handle),
@@ -2036,7 +2036,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
     driver_model = current_driver_model
 
     def persistence_mode(self) -> str | NaType:
-        """A flag that indicates whether persistence mode is enabled for the GPU. Value is either "Enabled" or "Disabled".
+        """A flag that indicates whether persistence mode is enabled for the NPU. Value is either "Enabled" or "Disabled".
 
         When persistence mode is enabled the NVIDIA driver remains loaded even when no active
         clients, such as X11 or nvidia-smi, exist. This minimizes the driver load latency associated
@@ -2051,7 +2051,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=persistence_mode
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=persistence_mode
         """  # pylint: disable=line-too-long
         return {0: 'Disabled', 1: 'Enabled'}.get(
             libnvml.nvmlQuery('nvmlDeviceGetPersistenceMode', self.handle),
@@ -2059,7 +2059,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         )
 
     def performance_state(self) -> str | NaType:
-        """The current performance state for the GPU. States range from P0 (maximum performance) to P12 (minimum performance).
+        """The current performance state for the NPU. States range from P0 (maximum performance) to P12 (minimum performance).
 
         Returns: Union[str, NaType]
             The current performance state in format ``P<int>``, or :const:`nputop.NA` when not applicable.
@@ -2068,7 +2068,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=pstate
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=pstate
         """  # pylint: disable=line-too-long
         performance_state = libnvml.nvmlQuery('nvmlDeviceGetPerformanceState', self.handle)
         if libnvml.nvmlCheckReturn(performance_state, int):
@@ -2085,7 +2085,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=ecc.errors.uncorrected.volatile.total
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=ecc.errors.uncorrected.volatile.total
         """  # pylint: disable=line-too-long
         return libnvml.nvmlQuery(
             'nvmlDeviceGetTotalEccErrors',
@@ -2095,7 +2095,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         )
 
     def compute_mode(self) -> str | NaType:
-        """The compute mode flag indicates whether individual or multiple compute applications may run on the GPU.
+        """The compute mode flag indicates whether individual or multiple compute applications may run on the NPU.
 
         Returns: Union[str, NaType]
             - :const:`'Default'`: means multiple contexts are allowed per device.
@@ -2108,7 +2108,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=compute_mode
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=compute_mode
         """  # pylint: disable=line-too-long
         return {
             libnvml.NVML_COMPUTEMODE_DEFAULT: 'Default',
@@ -2127,7 +2127,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=compute_cap
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=compute_cap
         """
         if self._cuda_compute_capability is None:
             self._cuda_compute_capability = libnvml.nvmlQuery(
@@ -2149,18 +2149,18 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         return self._is_mig_device
 
     def mig_mode(self) -> str | NaType:
-        """The MIG mode that the GPU is currently operating under.
+        """The MIG mode that the NPU is currently operating under.
 
         Returns: Union[str, NaType]
             - :const:`'Disabled'`: if the MIG mode is disabled.
             - :const:`'Enabled'`: if the MIG mode is enabled.
-            - :const:`nputop.NA`: if not applicable, e.g. the GPU does not support MIG mode.
+            - :const:`nputop.NA`: if not applicable, e.g. the NPU does not support MIG mode.
 
         Command line equivalent:
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=mig.mode.current
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=mig.mode.current
         """
         if self.is_mig_device():
             return NA
@@ -2214,11 +2214,11 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
             return [self]  # type: ignore[return-value]
         return self.mig_devices()
 
-    def processes(self) -> dict[int, GpuProcess]:
-        """Return a dictionary of processes running on the GPU.
+    def processes(self) -> dict[int, NpuProcess]:
+        """Return a dictionary of processes running on the NPU.
 
-        Returns: Dict[int, GpuProcess]
-            A dictionary mapping PID to GPU process instance.
+        Returns: Dict[int, NpuProcess]
+            A dictionary mapping PID to NPU process instance.
         """
         processes = {}
 
@@ -2228,18 +2228,18 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
             ('G', 'nvmlDeviceGetGraphicsRunningProcesses'),
         ):
             for p in libnvml.nvmlQuery(func, self.handle, default=()):
-                if isinstance(p.usedGpuMemory, int):
-                    gpu_memory = p.usedGpuMemory
+                if isinstance(p.usedNpuMemory, int):
+                    npu_memory = p.usedNpuMemory
                 else:
-                    # Used GPU memory is `N/A` on Windows Display Driver Model (WDDM)
-                    # or on MIG-enabled GPUs
-                    gpu_memory = NA  # type: ignore[assignment]
+                    # Used NPU memory is `N/A` on Windows Display Driver Model (WDDM)
+                    # or on MIG-enabled NPUs
+                    npu_memory = NA  # type: ignore[assignment]
                     found_na = True
-                proc = processes[p.pid] = self.GPU_PROCESS_CLASS(
+                proc = processes[p.pid] = self.NPU_PROCESS_CLASS(
                     pid=p.pid,
                     device=self,
-                    gpu_memory=gpu_memory,
-                    gpu_instance_id=getattr(p, 'gpuInstanceId', UINT_MAX),
+                    npu_memory=npu_memory,
+                    npu_instance_id=getattr(p, 'npuInstanceId', UINT_MAX),
                     compute_instance_id=getattr(p, 'computeInstanceId', UINT_MAX),
                 )
                 proc.type = proc.type + type
@@ -2256,12 +2256,12 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
             )
             for s in sorted(samples, key=lambda s: s.timeStamp):
                 try:
-                    processes[s.pid].set_gpu_utilization(s.smUtil, s.memUtil, s.encUtil, s.decUtil)
+                    processes[s.pid].set_npu_utilization(s.smUtil, s.memUtil, s.encUtil, s.decUtil)
                 except KeyError:  # noqa: PERF203
                     pass
             if not found_na:
                 for pid in set(processes).difference(s.pid for s in samples):
-                    processes[pid].set_gpu_utilization(0, 0, 0, 0)
+                    processes[pid].set_npu_utilization(0, 0, 0, 0)
 
         return processes
 
@@ -2292,7 +2292,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         'memory_percent',
         'memory_usage',
         'utilization_rates',
-        'gpu_utilization',
+        'npu_utilization',
         'memory_utilization',
         'encoder_utilization',
         'decoder_utilization',
@@ -2386,7 +2386,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 class PhysicalDevice(Device):
     """Class for physical devices.
 
-    This is the real GPU installed in the system.
+    This is the real NPU installed in the system.
     """
 
     _nvml_index: int
@@ -2395,13 +2395,13 @@ class PhysicalDevice(Device):
 
     @property
     def physical_index(self) -> int:
-        """Zero based index of the GPU. Can change at each boot.
+        """Zero based index of the NPU. Can change at each boot.
 
         Command line equivalent:
 
         .. code:: bash
 
-            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-gpu=index
+            nvidia-smi --id=<IDENTIFIER> --format=csv,noheader,nounits --query-npu=index
         """
         return self._nvml_index
 
@@ -2525,7 +2525,7 @@ class MigDevice(Device):  # pylint: disable=too-many-instance-attributes
         self._bus_id: str = NA
         self._memory_total: int | NaType = NA
         self._memory_total_human: str = NA
-        self._gpu_instance_id: int | NaType = NA
+        self._npu_instance_id: int | NaType = NA
         self._compute_instance_id: int | NaType = NA
         self._nvlink_link_count: int | None = None
         self._nvlink_throughput_counters: tuple[tuple[int | NaType, int]] | None = None
@@ -2553,7 +2553,7 @@ class MigDevice(Device):  # pylint: disable=too-many-instance-attributes
                         self.mig_index,
                         ignore_errors=False,
                     )
-                except libnvml.NVMLError_GpuIsLost:
+                except libnvml.NVMLError_NpuIsLost:
                     pass
         else:
             self._handle = libnvml.nvmlQuery('nvmlDeviceGetHandleByUUID', uuid, ignore_errors=False)
@@ -2601,21 +2601,21 @@ class MigDevice(Device):  # pylint: disable=too-many-instance-attributes
         """The parent physical device."""
         return self._parent
 
-    def gpu_instance_id(self) -> int | NaType:
-        """The gpu instance ID of the MIG device.
+    def npu_instance_id(self) -> int | NaType:
+        """The npu instance ID of the MIG device.
 
         Returns: Union[int, NaType]
-            The gpu instance ID of the MIG device, or :const:`nputop.NA` when not applicable.
+            The npu instance ID of the MIG device, or :const:`nputop.NA` when not applicable.
         """
-        if self._gpu_instance_id is NA:
-            self._gpu_instance_id = libnvml.nvmlQuery(
-                'nvmlDeviceGetGpuInstanceId',
+        if self._npu_instance_id is NA:
+            self._npu_instance_id = libnvml.nvmlQuery(
+                'nvmlDeviceGetNpuInstanceId',
                 self.handle,
                 default=UINT_MAX,
             )
-            if self._gpu_instance_id == UINT_MAX:
-                self._gpu_instance_id = NA
-        return self._gpu_instance_id
+            if self._npu_instance_id == UINT_MAX:
+                self._npu_instance_id = NA
+        return self._npu_instance_id
 
     def compute_instance_id(self) -> int | NaType:
         """The compute instance ID of the MIG device.
@@ -2645,7 +2645,7 @@ class MigDevice(Device):  # pylint: disable=too-many-instance-attributes
 
     SNAPSHOT_KEYS: ClassVar[list[str]] = [
         *Device.SNAPSHOT_KEYS,
-        'gpu_instance_id',
+        'npu_instance_id',
         'compute_instance_id',
     ]
 
@@ -2673,7 +2673,7 @@ class CudaDevice(Device):
         >>> os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
         >>> os.environ['CUDA_VISIBLE_DEVICES'] = '3,2,1,0'
 
-        >>> CudaDevice.count()                     # number of NVIDIA GPUs visible to CUDA applications
+        >>> CudaDevice.count()                     # number of NVIDIA NPUs visible to CUDA applications
         4
         >>> Device.cuda.count()                    # use alias in class `Device`
         4
@@ -2687,7 +2687,7 @@ class CudaDevice(Device):
 
         >>> cuda0 = CudaDevice(cuda_index=0)       # use CUDA ordinal (or `Device.cuda(0)`)
         >>> cuda1 = CudaDevice(nvml_index=2)       # use NVML ordinal
-        >>> cuda2 = CudaDevice(uuid='GPU-xxxxxx')  # use UUID string
+        >>> cuda2 = CudaDevice(uuid='NPU-xxxxxx')  # use UUID string
 
         >>> cuda0.memory_free()                    # total free memory in bytes
         11550654464
@@ -2731,7 +2731,7 @@ class CudaDevice(Device):
 
     @classmethod
     def count(cls) -> int:
-        """The number of GPUs visible to CUDA applications."""
+        """The number of NPUs visible to CUDA applications."""
         try:
             return len(super().parse_cuda_visible_devices())
         except libnvml.NVMLError:
@@ -2761,7 +2761,7 @@ class CudaDevice(Device):
 
         Args:
             indices (Iterable[int]):
-                The indices of the GPU in CUDA ordinal, if not given, returns all visible CUDA devices.
+                The indices of the NPU in CUDA ordinal, if not given, returns all visible CUDA devices.
 
         Returns: List[CudaDevice]
             A list of :class:`CudaDevice` of the given CUDA indices.
@@ -2950,7 +2950,7 @@ def parse_cuda_visible_devices(
         >>> parse_cuda_visible_devices('0,4')  # pass the `CUDA_VISIBLE_DEVICES` value explicitly
         [0, 4]
 
-        >>> parse_cuda_visible_devices('GPU-18ef14e9,GPU-849d5a8d')  # accept abbreviated UUIDs
+        >>> parse_cuda_visible_devices('NPU-18ef14e9,NPU-849d5a8d')  # accept abbreviated UUIDs
         [5, 6]
 
         >>> parse_cuda_visible_devices(None)   # get all devices when the `CUDA_VISIBLE_DEVICES` environment variable unset
@@ -2958,9 +2958,9 @@ def parse_cuda_visible_devices(
 
         >>> parse_cuda_visible_devices('MIG-d184f67c-c95f-5ef2-a935-195bd0094fbd')           # MIG device support (MIG UUID)
         [(0, 0)]
-        >>> parse_cuda_visible_devices('MIG-GPU-3eb79704-1571-707c-aee8-f43ce747313d/13/0')  # MIG device support (GPU UUID)
+        >>> parse_cuda_visible_devices('MIG-NPU-3eb79704-1571-707c-aee8-f43ce747313d/13/0')  # MIG device support (NPU UUID)
         [(0, 1)]
-        >>> parse_cuda_visible_devices('MIG-GPU-3eb79704/13/0')                              # MIG device support (abbreviated GPU UUID)
+        >>> parse_cuda_visible_devices('MIG-NPU-3eb79704/13/0')                              # MIG device support (abbreviated NPU UUID)
         [(0, 1)]
 
         >>> parse_cuda_visible_devices('')     # empty string
@@ -2995,29 +2995,29 @@ def normalize_cuda_visible_devices(cuda_visible_devices: str | None = _VALUE_OMI
             environment variable will be unset before parsing.
 
     Returns: str
-        The comma-separated string (GPU UUIDs) of the ``CUDA_VISIBLE_DEVICES`` environment variable.
+        The comma-separated string (NPU UUIDs) of the ``CUDA_VISIBLE_DEVICES`` environment variable.
 
     Examples:
         >>> import os
         >>> os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
         >>> os.environ['CUDA_VISIBLE_DEVICES'] = '6,5'
         >>> normalize_cuda_visible_devices()        # normalize the `CUDA_VISIBLE_DEVICES` environment variable to UUID strings
-        'GPU-849d5a8d-610e-eeea-1fd4-81ff44a23794,GPU-18ef14e9-dec6-1d7e-1284-3010c6ce98b1'
+        'NPU-849d5a8d-610e-eeea-1fd4-81ff44a23794,NPU-18ef14e9-dec6-1d7e-1284-3010c6ce98b1'
 
         >>> normalize_cuda_visible_devices('4')     # pass the `CUDA_VISIBLE_DEVICES` value explicitly
-        'GPU-96de99c9-d68f-84c8-424c-7c75e59cc0a0'
+        'NPU-96de99c9-d68f-84c8-424c-7c75e59cc0a0'
 
-        >>> normalize_cuda_visible_devices('GPU-18ef14e9,GPU-849d5a8d')  # normalize abbreviated UUIDs
-        'GPU-18ef14e9-dec6-1d7e-1284-3010c6ce98b1,GPU-849d5a8d-610e-eeea-1fd4-81ff44a23794'
+        >>> normalize_cuda_visible_devices('NPU-18ef14e9,NPU-849d5a8d')  # normalize abbreviated UUIDs
+        'NPU-18ef14e9-dec6-1d7e-1284-3010c6ce98b1,NPU-849d5a8d-610e-eeea-1fd4-81ff44a23794'
 
         >>> normalize_cuda_visible_devices(None)    # get all devices when the `CUDA_VISIBLE_DEVICES` environment variable unset
-        'GPU-<GPU0-UUID>,GPU-<GPU1-UUID>,...'  # all GPU UUIDs
+        'NPU-<NPU0-UUID>,NPU-<NPU1-UUID>,...'  # all NPU UUIDs
 
         >>> normalize_cuda_visible_devices('MIG-d184f67c-c95f-5ef2-a935-195bd0094fbd')           # MIG device support (MIG UUID)
         'MIG-d184f67c-c95f-5ef2-a935-195bd0094fbd'
-        >>> normalize_cuda_visible_devices('MIG-GPU-3eb79704-1571-707c-aee8-f43ce747313d/13/0')  # MIG device support (GPU UUID)
+        >>> normalize_cuda_visible_devices('MIG-NPU-3eb79704-1571-707c-aee8-f43ce747313d/13/0')  # MIG device support (NPU UUID)
         'MIG-37b51284-1df4-5451-979d-3231ccb0822e'
-        >>> normalize_cuda_visible_devices('MIG-GPU-3eb79704/13/0')                              # MIG device support (abbreviated GPU UUID)
+        >>> normalize_cuda_visible_devices('MIG-NPU-3eb79704/13/0')                              # MIG device support (abbreviated NPU UUID)
         'MIG-37b51284-1df4-5451-979d-3231ccb0822e'
 
         >>> normalize_cuda_visible_devices('')      # empty string
@@ -3122,7 +3122,7 @@ def _parse_cuda_visible_devices(  # pylint: disable=too-many-branches,too-many-s
         physical_device_attrs = _get_all_physical_device_attrs()
     except libnvml.NVMLError:
         return []
-    gpu_uuids = set(physical_device_attrs)
+    npu_uuids = set(physical_device_attrs)
 
     if cuda_visible_devices is None:
         cuda_visible_devices = ','.join(physical_device_attrs.keys())
@@ -3179,16 +3179,16 @@ def _parse_cuda_visible_devices(  # pylint: disable=too-many-branches,too-many-s
         devices = mig_devices[:1]  # at most one MIG device is visible
     else:
         # All devices in `CUDA_VISIBLE_DEVICES` are physical devices
-        # Check if any GPU that enables MIG mode
+        # Check if any NPU that enables MIG mode
         devices_backup = devices.copy()
         devices = []
         for device in devices_backup:
             if device.is_mig_mode_enabled():
-                # Got available MIG devices, use the first MIG device and ignore all non-MIG GPUs
+                # Got available MIG devices, use the first MIG device and ignore all non-MIG NPUs
                 try:
                     devices = [device.mig_device(mig_index=0)]  # at most one MIG device is visible
                 except libnvml.NVMLError:
-                    continue  # no MIG device available on the GPU
+                    continue  # no MIG device available on the NPU
                 else:
                     break  # got one MIG device
             else:

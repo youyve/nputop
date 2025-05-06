@@ -1,4 +1,4 @@
-# This file is part of nputop, the interactive NVIDIA-GPU process viewer.
+# This file is part of nputop, the interactive NVIDIA-NPU process viewer.
 # License: GNU GPL version 3.
 
 # pylint: disable=missing-module-docstring,missing-class-docstring,missing-function-docstring
@@ -9,17 +9,17 @@ from nputop.api import NA
 from nputop.api import MigDevice as MigDeviceBase
 from nputop.api import PhysicalDevice as DeviceBase
 from nputop.api import libnvml, utilization2string
-from nputop.gui.library.process import GpuProcess
+from nputop.gui.library.process import NpuProcess
 
 
 __all__ = ['Device', 'NA']
 
 
 class Device(DeviceBase):
-    GPU_PROCESS_CLASS = GpuProcess
+    NPU_PROCESS_CLASS = NpuProcess
 
     MEMORY_UTILIZATION_THRESHOLDS = (10, 80)
-    GPU_UTILIZATION_THRESHOLDS = (10, 75)
+    NPU_UTILIZATION_THRESHOLDS = (10, 75)
     INTENSITY2COLOR = {'light': 'green', 'moderate': 'yellow', 'heavy': 'red'}
 
     SNAPSHOT_KEYS = [
@@ -33,7 +33,7 @@ class Device(DeviceBase):
         'memory_total_human',
         'memory_percent',
         'memory_usage',
-        'gpu_utilization',
+        'npu_utilization',
         'memory_utilization',
         'fan_speed',
         'temperature',
@@ -50,13 +50,13 @@ class Device(DeviceBase):
         'is_mig_device',
         'memory_percent_string',
         'memory_utilization_string',
-        'gpu_utilization_string',
+        'npu_utilization_string',
         'fan_speed_string',
         'temperature_string',
         'memory_loading_intensity',
         'memory_display_color',
-        'gpu_loading_intensity',
-        'gpu_display_color',
+        'npu_loading_intensity',
+        'npu_display_color',
         'loading_intensity',
         'display_color',
     ]
@@ -114,8 +114,8 @@ class Device(DeviceBase):
     def memory_utilization_string(self):  # in percentage
         return utilization2string(self.memory_utilization())
 
-    def gpu_utilization_string(self):  # in percentage
-        return utilization2string(self.gpu_utilization())
+    def npu_utilization_string(self):  # in percentage
+        return utilization2string(self.npu_utilization())
 
     def fan_speed_string(self):  # in percentage
         return utilization2string(self.fan_speed())
@@ -129,11 +129,11 @@ class Device(DeviceBase):
     def memory_loading_intensity(self):
         return self.loading_intensity_of(self.memory_percent(), type='memory')
 
-    def gpu_loading_intensity(self):
-        return self.loading_intensity_of(self.gpu_utilization(), type='gpu')
+    def npu_loading_intensity(self):
+        return self.loading_intensity_of(self.npu_utilization(), type='npu')
 
     def loading_intensity(self):
-        loading_intensity = (self.memory_loading_intensity(), self.gpu_loading_intensity())
+        loading_intensity = (self.memory_loading_intensity(), self.npu_loading_intensity())
         if 'heavy' in loading_intensity:
             return 'heavy'
         if 'moderate' in loading_intensity:
@@ -150,16 +150,16 @@ class Device(DeviceBase):
             return 'red'
         return self.INTENSITY2COLOR.get(self.memory_loading_intensity())
 
-    def gpu_display_color(self):
+    def npu_display_color(self):
         if self.name().startswith('ERROR:'):
             return 'red'
-        return self.INTENSITY2COLOR.get(self.gpu_loading_intensity())
+        return self.INTENSITY2COLOR.get(self.npu_loading_intensity())
 
     @staticmethod
     def loading_intensity_of(utilization, type='memory'):  # pylint: disable=redefined-builtin
         thresholds = {
             'memory': Device.MEMORY_UTILIZATION_THRESHOLDS,
-            'gpu': Device.GPU_UTILIZATION_THRESHOLDS,
+            'npu': Device.NPU_UTILIZATION_THRESHOLDS,
         }.get(type)
         if utilization is NA:
             return 'moderate'
@@ -202,20 +202,20 @@ class MigDevice(MigDeviceBase, Device):
         'memory_usage',
         'bar1_memory_used_human',
         'bar1_memory_percent',
-        'gpu_utilization',
+        'npu_utilization',
         'memory_utilization',
         'total_volatile_uncorrected_ecc_errors',
         'mig_mode',
         'is_mig_device',
-        'gpu_instance_id',
+        'npu_instance_id',
         'compute_instance_id',
         'memory_percent_string',
         'memory_utilization_string',
-        'gpu_utilization_string',
+        'npu_utilization_string',
         'memory_loading_intensity',
         'memory_display_color',
-        'gpu_loading_intensity',
-        'gpu_display_color',
+        'npu_loading_intensity',
+        'npu_display_color',
         'loading_intensity',
         'display_color',
     ]
