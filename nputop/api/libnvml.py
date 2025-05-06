@@ -1,4 +1,4 @@
-# This file is part of nputop, the interactive NVIDIA-GPU process viewer.
+# This file is part of nputop, the interactive NVIDIA-NPU process viewer.
 #
 # Copyright 2021-2024 Xuehai Pan. All Rights Reserved.
 #
@@ -313,7 +313,7 @@ def nvmlInitWithFlags(flags: int) -> None:  # pylint: disable=function-redefined
             'HINT: The NVIDIA Management Library ships with the NVIDIA display driver (available at\n'
             '      https://www.nvidia.com/Download/index.aspx), or can be downloaded as part of the\n'
             '      NVIDIA CUDA Toolkit (available at https://developer.nvidia.com/cuda-downloads).\n'
-            '      The lists of OS platforms and NVIDIA-GPUs supported by the NVML library can be\n'
+            '      The lists of OS platforms and NVIDIA-NPUs supported by the NVML library can be\n'
             '      found in the NVML API Reference at https://docs.nvidia.com/deploy/nvml-api.'
         )
         for text, color, attrs in (
@@ -535,13 +535,13 @@ if not _pynvml_installation_corrupted:
         _fields_: _ClassVar[list[tuple[str, type]]] = [
             # Process ID
             ('pid', _ctypes.c_uint),
-            # Amount of used GPU memory in bytes.
+            # Amount of used NPU memory in bytes.
             # Under WDDM, NVML_VALUE_NOT_AVAILABLE is always reported because Windows KMD manages
             # all the memory and not the NVIDIA driver.
-            ('usedGpuMemory', _ctypes.c_ulonglong),
+            ('usedNpuMemory', _ctypes.c_ulonglong),
         ]
         _fmt_: _ClassVar[dict[str, str]] = {
-            'usedGpuMemory': '%d B',
+            'usedNpuMemory': '%d B',
         }
 
     # pylint: disable-next=missing-class-docstring,too-few-public-methods,function-redefined
@@ -549,19 +549,19 @@ if not _pynvml_installation_corrupted:
         _fields_: _ClassVar[list[tuple[str, type]]] = [
             # Process ID
             ('pid', _ctypes.c_uint),
-            # Amount of used GPU memory in bytes.
+            # Amount of used NPU memory in bytes.
             # Under WDDM, NVML_VALUE_NOT_AVAILABLE is always reported because Windows KMD manages
             # all the memory and not the NVIDIA driver.
-            ('usedGpuMemory', _ctypes.c_ulonglong),
-            # If MIG is enabled, stores a valid GPU instance ID. gpuInstanceId is set to 0xFFFFFFFF
+            ('usedNpuMemory', _ctypes.c_ulonglong),
+            # If MIG is enabled, stores a valid NPU instance ID. npuInstanceId is set to 0xFFFFFFFF
             # otherwise.
-            ('gpuInstanceId', _ctypes.c_uint),
+            ('npuInstanceId', _ctypes.c_uint),
             # If MIG is enabled, stores a valid compute instance ID. computeInstanceId is set to
             # 0xFFFFFFFF otherwise.
             ('computeInstanceId', _ctypes.c_uint),
         ]
         _fmt_: _ClassVar[dict[str, str]] = {
-            'usedGpuMemory': '%d B',
+            'usedNpuMemory': '%d B',
         }
 
     # pylint: disable-next=missing-class-docstring,too-few-public-methods,function-redefined
@@ -569,22 +569,22 @@ if not _pynvml_installation_corrupted:
         _fields_: _ClassVar[list[tuple[str, type]]] = [
             # Process ID
             ('pid', _ctypes.c_uint),
-            # Amount of used GPU memory in bytes.
+            # Amount of used NPU memory in bytes.
             # Under WDDM, NVML_VALUE_NOT_AVAILABLE is always reported because Windows KMD manages
             # all the memory and not the NVIDIA driver.
-            ('usedGpuMemory', _ctypes.c_ulonglong),
-            # If MIG is enabled, stores a valid GPU instance ID. gpuInstanceId is set to 0xFFFFFFFF
+            ('usedNpuMemory', _ctypes.c_ulonglong),
+            # If MIG is enabled, stores a valid NPU instance ID. npuInstanceId is set to 0xFFFFFFFF
             # otherwise.
-            ('gpuInstanceId', _ctypes.c_uint),
+            ('npuInstanceId', _ctypes.c_uint),
             # If MIG is enabled, stores a valid compute instance ID. computeInstanceId is set to
             # 0xFFFFFFFF otherwise.
             ('computeInstanceId', _ctypes.c_uint),
-            # Amount of used GPU conf compute protected memory in bytes.
-            ('usedGpuCcProtectedMemory', _ctypes.c_ulonglong),
+            # Amount of used NPU conf compute protected memory in bytes.
+            ('usedNpuCcProtectedMemory', _ctypes.c_ulonglong),
         ]
         _fmt_: _ClassVar[dict[str, str]] = {
-            'usedGpuMemory': '%d B',
-            'usedGpuCcProtectedMemory': '%d B',
+            'usedNpuMemory': '%d B',
+            'usedNpuCcProtectedMemory': '%d B',
         }
 
     __get_running_processes_version_suffix = None
@@ -679,9 +679,9 @@ if not _pynvml_installation_corrupted:
             for i in range(c_count.value):
                 # Use an alternative struct for this object
                 obj = _pynvml.nvmlStructToFriendlyObject(c_processes[i])
-                if obj.usedGpuMemory == ULONGLONG_MAX:
+                if obj.usedNpuMemory == ULONGLONG_MAX:
                     # Special case for WDDM on Windows, see comment above
-                    obj.usedGpuMemory = None
+                    obj.usedNpuMemory = None
                 processes.append(obj)
 
             return processes
@@ -706,8 +706,8 @@ if not _pynvml_installation_corrupted:
                 If the user doesn't have permission to perform this operation.
             NVMLError_InvalidArgument:
                 If device is invalid.
-            NVMLError_GpuIsLost:
-                If the target GPU has fallen off the bus or is otherwise inaccessible.
+            NVMLError_NpuIsLost:
+                If the target NPU has fallen off the bus or is otherwise inaccessible.
             NVMLError_Unknown:
                 On any unexpected error.
         """
@@ -733,8 +733,8 @@ if not _pynvml_installation_corrupted:
                 If the user doesn't have permission to perform this operation.
             NVMLError_InvalidArgument:
                 If device is invalid.
-            NVMLError_GpuIsLost:
-                If the target GPU has fallen off the bus or is otherwise inaccessible.
+            NVMLError_NpuIsLost:
+                If the target NPU has fallen off the bus or is otherwise inaccessible.
             NVMLError_Unknown:
                 On any unexpected error.
         """
@@ -760,8 +760,8 @@ if not _pynvml_installation_corrupted:
                 If the user doesn't have permission to perform this operation.
             NVMLError_InvalidArgument:
                 If device is invalid.
-            NVMLError_GpuIsLost:
-                If the target GPU has fallen off the bus or is otherwise inaccessible.
+            NVMLError_NpuIsLost:
+                If the target NPU has fallen off the bus or is otherwise inaccessible.
             NVMLError_Unknown:
                 On any unexpected error.
         """
@@ -788,7 +788,7 @@ if not _pynvml_installation_corrupted:
             # Unallocated device memory (in bytes).
             ('free', _ctypes.c_ulonglong),
             # Allocated device memory (in bytes).
-            # Note that the driver/GPU always sets aside a small amount of memory for bookkeeping.
+            # Note that the driver/NPU always sets aside a small amount of memory for bookkeeping.
             ('used', _ctypes.c_ulonglong),
         ]
         _fmt_: _ClassVar[dict[str, str]] = {'<default>': '%d B'}
@@ -805,7 +805,7 @@ if not _pynvml_installation_corrupted:
             # Unallocated device memory (in bytes).
             ('free', _ctypes.c_ulonglong),
             # Allocated device memory (in bytes).
-            # Note that the driver/GPU always sets aside a small amount of memory for bookkeeping.
+            # Note that the driver/NPU always sets aside a small amount of memory for bookkeeping.
             ('used', _ctypes.c_ulonglong),
         ]
         _fmt_: _ClassVar[dict[str, str]] = {'<default>': '%d B'}
@@ -856,8 +856,8 @@ if not _pynvml_installation_corrupted:
                 If the user doesn't have permission to perform this operation.
             NVMLError_InvalidArgument:
                 If device is invalid.
-            NVMLError_GpuIsLost:
-                If the target GPU has fallen off the bus or is otherwise inaccessible.
+            NVMLError_NpuIsLost:
+                If the target NPU has fallen off the bus or is otherwise inaccessible.
             NVMLError_Unknown:
                 On any unexpected error.
         """
@@ -895,8 +895,8 @@ class _CustomModule(_ModuleType):
 
     Automatic lookup fallback:
 
-        >>> libnvml.c_nvmlGpuInstance_t  # fallback to pynvml.c_nvmlGpuInstance_t
-        <class 'pynvml.LP_struct_c_nvmlGpuInstance_t'>
+        >>> libnvml.c_nvmlNpuInstance_t  # fallback to pynvml.c_nvmlNpuInstance_t
+        <class 'pynvml.LP_struct_c_nvmlNpuInstance_t'>
 
     Context manager:
 

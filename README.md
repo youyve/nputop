@@ -26,7 +26,7 @@ git clone https://github.com/youyve/nputop.git
 cd nputop
 # 切换到dev分支
 git checkout dev
-# 从项目的源码进行安装测试（目前只能在NVIDIA的GPU上安装）
+# 从项目的源码进行安装测试（目前只能在NVIDIA的NPU上安装）
 pip install -e .
 # 安装完成后使用nputop命令即可看到监视器
 ```
@@ -47,7 +47,7 @@ git checkout dev
 
 ### 开发内容
 
-详细阅读并理解开发项目的代码，原始项目主要是通过pynvml库来获取NVIDIA GPU的信息，而待开发项目需要将项目中通过pynvml库调用的api替换为pyacl的api。注意pynvml的接口不完全与pyacl的接口相对应，可能需要在迁移过程中进行取舍和组合。
+详细阅读并理解开发项目的代码，原始项目主要是通过pynvml库来获取NVIDIA NPU的信息，而待开发项目需要将项目中通过pynvml库调用的api替换为pyacl的api。注意pynvml的接口不完全与pyacl的接口相对应，可能需要在迁移过程中进行取舍和组合。
 
 以下是pyacl的api参考文档：
 

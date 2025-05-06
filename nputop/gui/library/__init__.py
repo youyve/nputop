@@ -1,4 +1,4 @@
-# This file is part of nputop, the interactive NVIDIA-GPU process viewer.
+# This file is part of nputop, the interactive NVIDIA-NPU process viewer.
 # License: GNU GPL version 3.
 
 # pylint: disable=missing-module-docstring
@@ -21,7 +21,7 @@ from nputop.gui.library.messagebox import MessageBox, send_signal
 from nputop.gui.library.mouse import MouseEvent
 from nputop.gui.library.process import (
     GiB,
-    GpuProcess,
+    NpuProcess,
     HostProcess,
     Snapshot,
     bytes2human,

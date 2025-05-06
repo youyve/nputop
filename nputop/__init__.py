@@ -1,4 +1,4 @@
-# This file is part of nputop, the interactive NVIDIA-GPU process viewer.
+# This file is part of nputop, the interactive NVIDIA-NPU process viewer.
 #
 # Copyright 2021-2024 Xuehai Pan. All Rights Reserved.
 #
@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""An interactive NVIDIA-GPU process viewer and beyond, the one-stop solution for GPU process management."""
+"""An interactive NVIDIA-NPU process viewer and beyond, the one-stop solution for NPU process management."""
 
 import sys
 

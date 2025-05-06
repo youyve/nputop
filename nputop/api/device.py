@@ -16,7 +16,7 @@ from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, Generator, Iterable, NamedTuple, overload
 
 from nputop.api import libnvml
-from nputop.api.process import GpuProcess
+from nputop.api.process import NpuProcess
 from nputop.api.utils import (
     NA,
     UINT_MAX,
@@ -65,7 +65,7 @@ class ClockSpeedInfos(NamedTuple):  # pylint: disable=missing-class-docstring
 
 
 class UtilizationRates(NamedTuple):  # in percentage # pylint: disable=missing-class-docstring
-    gpu: int | NaType
+    npu: int | NaType
     memory: int | NaType
     encoder: int | NaType
     decoder: int | NaType
@@ -100,13 +100,13 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
     UUID_PATTERN: re.Pattern = re.compile(
         r"""^  # full match
         (?:(?P<MigMode>MIG)-)?                                 # prefix for MIG UUID
-        (?:(?P<GpuUuid>GPU)-)?                                 # prefix for GPU UUID
-        (?(MigMode)|(?(GpuUuid)|GPU-))                         # always have a prefix
-        (?P<UUID>[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})  # UUID for the GPU/MIG device in lower case
-        # Suffix for MIG device while using GPU UUID with GPU instance (GI) ID and compute instance (CI) ID
+        (?:(?P<NpuUuid>NPU)-)?                                 # prefix for NPU UUID
+        (?(MigMode)|(?(NpuUuid)|NPU-))                         # always have a prefix
+        (?P<UUID>[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})  # UUID for the NPU/MIG device in lower case
+        # Suffix for MIG device while using NPU UUID with NPU instance (GI) ID and compute instance (CI) ID
         (?(MigMode)                                            # match only when the MIG prefix matches
-            (?(GpuUuid)                                        # match only when provide with GPU UUID
-                /(?P<GpuInstanceId>\d+)                        # GI ID of the MIG device
+            (?(NpuUuid)                                        # match only when provide with NPU UUID
+                /(?P<NpuInstanceId>\d+)                        # GI ID of the MIG device
                 /(?P<ComputeInstanceId>\d+)                    # CI ID of the MIG device
             |)
         |)
@@ -114,7 +114,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         flags=re.VERBOSE,
     )
 
-    GPU_PROCESS_CLASS: type[GpuProcess] = GpuProcess
+    NPU_PROCESS_CLASS: type[NpuProcess] = NpuProcess
     cuda: type[CudaDevice] = None  # type: ignore[assignment] # defined in below
     """Shortcut for class :class:`CudaDevice`."""
 
@@ -136,7 +136,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
         .. code:: bash
 
-            nvidia-smi --id=0 --format=csv,noheader,nounits --query-gpu=driver_version
+            nvidia-smi --id=0 --format=csv,noheader,nounits --query-npu=driver_version
 
         Raises:
             libnvml.NVMLError_LibraryNotFound:
@@ -181,13 +181,13 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
 
     @classmethod
     def count(cls) -> int:
-        """The number of NVIDIA GPUs in the system.
+        """The number of NVIDIA NPUs in the system.
 
         Command line equivalent:
 
         .. code:: bash
 
-            nvidia-smi --id=0 --format=csv,noheader,nounits --query-gpu=count
+            nvidia-smi --id=0 --format=csv,noheader,nounits --query-npu=count
 
         Raises:
             libnvml.NVMLError_LibraryNotFound:
@@ -329,9 +329,9 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
                     index,
                     ignore_errors=False,
                 )
-            except libnvml.NVMLError_GpuIsLost:
+            except libnvml.NVMLError_NpuIsLost:
                 self._handle = None
-                self._name = 'ERROR: GPU is Lost'
+                self._name = 'ERROR: NPU is Lost'
             except libnvml.NVMLError_Unknown:
                 self._handle = None
                 self._name = 'ERROR: Unknown'
@@ -349,10 +349,10 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
                         bus_id,
                         ignore_errors=False,
                     )
-            except libnvml.NVMLError_GpuIsLost:
+            except libnvml.NVMLError_NpuIsLost:
                 self._handle = None
                 self._nvml_index = NA  # type: ignore[assignment]
-                self._name = 'ERROR: GPU is Lost'
+                self._name = 'ERROR: NPU is Lost'
             except libnvml.NVMLError_Unknown:
                 self._handle = None
                 self._nvml_index = NA  # type: ignore[assignment]
@@ -575,11 +575,11 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
     @memoize_when_activated
     def utilization_rates(self) -> UtilizationRates:  # in percentage
         # pylint: disable=line-too-long
-        gpu, memory, encoder, decoder = NA, NA, NA, NA
+        npu, memory, encoder, decoder = NA, NA, NA, NA
 
         utilization_rates = libnvml.nvmlQuery('nvmlDeviceGetUtilizationRates', self.handle)
         if libnvml.nvmlCheckReturn(utilization_rates):
-            gpu, memory = utilization_rates.gpu, utilization_rates.memory
+            npu, memory = utilization_rates.gpu, utilization_rates.memory
 
         encoder_utilization = libnvml.nvmlQuery('nvmlDeviceGetEncoderUtilization', self.handle)
         if libnvml.nvmlCheckReturn(encoder_utilization, list) and len(encoder_utilization) > 0:
@@ -589,12 +589,12 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         if libnvml.nvmlCheckReturn(decoder_utilization, list) and len(decoder_utilization) > 0:
             decoder = decoder_utilization[0]
 
-        return UtilizationRates(gpu=gpu, memory=memory, encoder=encoder, decoder=decoder)
+        return UtilizationRates(npu=npu, memory=memory, encoder=encoder, decoder=decoder)
 
-    def gpu_utilization(self) -> int | NaType:  # in percentage
-        return self.utilization_rates().gpu
+    def npu_utilization(self) -> int | NaType:  # in percentage
+        return self.utilization_rates().npu
 
-    gpu_percent = gpu_utilization  # in percentage
+    npu_percent = npu_utilization  # in percentage
 
     def memory_utilization(self) -> int | NaType:  # in percentage
         # pylint: disable=line-too-long
@@ -996,7 +996,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
             )
         return self._cuda_compute_capability
 
-    def processes(self) -> dict[int, GpuProcess]:
+    def processes(self) -> dict[int, NpuProcess]:
         processes = {}
 
         found_na = False
@@ -1005,18 +1005,18 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
             ('G', 'nvmlDeviceGetGraphicsRunningProcesses'),
         ):
             for p in libnvml.nvmlQuery(func, self.handle, default=()):
-                if isinstance(p.usedGpuMemory, int):
-                    gpu_memory = p.usedGpuMemory
+                if isinstance(p.usedNpuMemory, int):
+                    npu_memory = p.usedNpuMemory
                 else:
-                    # Used GPU memory is `N/A` on Windows Display Driver Model (WDDM)
-                    # or on MIG-enabled GPUs
-                    gpu_memory = NA  # type: ignore[assignment]
+                    # Used NPU memory is `N/A` on Windows Display Driver Model (WDDM)
+                    # or on MIG-enabled NPUs
+                    npu_memory = NA  # type: ignore[assignment]
                     found_na = True
-                proc = processes[p.pid] = self.GPU_PROCESS_CLASS(
+                proc = processes[p.pid] = self.NPU_PROCESS_CLASS(
                     pid=p.pid,
                     device=self,
-                    gpu_memory=gpu_memory,
-                    gpu_instance_id=getattr(p, 'gpuInstanceId', UINT_MAX),
+                    npu_memory=npu_memory,
+                    npu_instance_id=getattr(p, 'npuInstanceId', UINT_MAX),
                     compute_instance_id=getattr(p, 'computeInstanceId', UINT_MAX),
                 )
                 proc.type = proc.type + type
@@ -1033,12 +1033,12 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
             )
             for s in sorted(samples, key=lambda s: s.timeStamp):
                 try:
-                    processes[s.pid].set_gpu_utilization(s.smUtil, s.memUtil, s.encUtil, s.decUtil)
+                    processes[s.pid].set_npu_utilization(s.smUtil, s.memUtil, s.encUtil, s.decUtil)
                 except KeyError:  # noqa: PERF203
                     pass
             if not found_na:
                 for pid in set(processes).difference(s.pid for s in samples):
-                    processes[pid].set_gpu_utilization(0, 0, 0, 0)
+                    processes[pid].set_npu_utilization(0, 0, 0, 0)
 
         return processes
 
@@ -1065,7 +1065,7 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         'memory_percent',
         'memory_usage',
         'utilization_rates',
-        'gpu_utilization',
+        'npu_utilization',
         'memory_utilization',
         'encoder_utilization',
         'decoder_utilization',
@@ -1161,7 +1161,7 @@ class CudaDevice(Device):
 
     @classmethod
     def count(cls) -> int:
-        """The number of GPUs visible to CUDA applications."""
+        """The number of NPUs visible to CUDA applications."""
         try:
             return len(super().parse_cuda_visible_devices())
         except libnvml.NVMLError:
@@ -1349,7 +1349,7 @@ def _parse_cuda_visible_devices(  # pylint: disable=too-many-branches,too-many-s
         physical_device_attrs = _get_all_physical_device_attrs()
     except libnvml.NVMLError:
         return []
-    gpu_uuids = set(physical_device_attrs)
+    npu_uuids = set(physical_device_attrs)
 
     if cuda_visible_devices is None:
         cuda_visible_devices = ','.join(physical_device_attrs.keys())

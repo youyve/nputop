@@ -1,4 +1,4 @@
-# This file is part of nputop, the interactive NVIDIA-GPU process viewer.
+# This file is part of nputop, the interactive NVIDIA-NPU process viewer.
 # License: GNU GPL version 3.
 
 # pylint: disable=missing-module-docstring,missing-class-docstring,missing-function-docstring
@@ -10,11 +10,11 @@ from nputop.version import __version__
 HELP_TEMPLATE = """nputop {} - (C) Xuehai Pan, 2021-2024.
 Released under the GNU GPLv3 License.
 
-GPU Process Type: C: Compute, G: Graphics, X: Mixed.
+NPU Process Type: C: Compute, G: Graphics, X: Mixed.
 
 Device coloring rules by loading intensity:
-  - GPU utilization: light < {:2d}% <= moderate < {:2d}% <= heavy.
-  - GPU-MEM percent: light < {:2d}% <= moderate < {:2d}% <= heavy.
+  - NPU utilization: light < {:2d}% <= moderate < {:2d}% <= heavy.
+  - NPU-MEM percent: light < {:2d}% <= moderate < {:2d}% <= heavy.
 
       a f c: change display mode                h ?: show this help screen
        F5 r: force refresh window                 q: quit
@@ -31,10 +31,10 @@ Device coloring rules by loading intensity:
       Wheel: scroll process list        Shift-Wheel: scroll horizontally
         Tab: scroll process list         Ctrl-Wheel: fast scroll ({}x)
 
-      on oN: sort by GPU-INDEX                os oS: sort by %SM
+      on oN: sort by NPU-INDEX                os oS: sort by %SM
       op oP: sort by PID                      oc oC: sort by %CPU
       ou oU: sort by USER                     om oM: sort by %MEM
-      og oG: sort by GPU-MEM                  ot oT: sort by TIME
+      og oG: sort by NPU-MEM                  ot oT: sort by TIME
         , .: select sort column                   /: invert sort order
 
 Press any key to return.
@@ -50,7 +50,7 @@ class HelpScreen(Displayable):  # pylint: disable=too-many-instance-attributes
         self.infos = (
             HELP_TEMPLATE.format(
                 __version__,
-                *Device.GPU_UTILIZATION_THRESHOLDS,
+                *Device.NPU_UTILIZATION_THRESHOLDS,
                 *Device.MEMORY_UTILIZATION_THRESHOLDS,
                 MouseEvent.CTRL_SCROLLWHEEL_MULTIPLIER,
             )

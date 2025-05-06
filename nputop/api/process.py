@@ -1,4 +1,4 @@
-# This file is part of nputop, the interactive NVIDIA-GPU process viewer.
+# This file is part of nputop, the interactive NVIDIA-NPU process viewer.
 #
 # Copyright 2021-2024 Xuehai Pan. All Rights Reserved.
 #
@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""The live classes for process running on the host and the GPU devices."""
+"""The live classes for process running on the host and the NPU devices."""
 
 # pylint: disable=too-many-lines
 
@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     from nputop.api.device import Device
 
 
-__all__ = ['HostProcess', 'GpuProcess', 'command_join']
+__all__ = ['HostProcess', 'NpuProcess', 'command_join']
 
 
 if host.POSIX:
@@ -102,7 +102,7 @@ def command_join(cmdline: list[str]) -> str:
 
 
 _RAISE = object()
-_USE_FALLBACK_WHEN_RAISE = threading.local()  # see also `GpuProcess.failsafe`
+_USE_FALLBACK_WHEN_RAISE = threading.local()  # see also `NpuProcess.failsafe`
 
 
 def auto_garbage_clean(
@@ -110,19 +110,19 @@ def auto_garbage_clean(
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Remove the object references in the instance cache if the method call fails (the process is gone).
 
-    The fallback value will be used with `:meth:`GpuProcess.failsafe`` context manager, otherwise
+    The fallback value will be used with `:meth:`NpuProcess.failsafe`` context manager, otherwise
     raises an exception when falls.
     """
 
     def wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
-        def wrapped(self: GpuProcess, *args: Any, **kwargs: Any) -> Any:
+        def wrapped(self: NpuProcess, *args: Any, **kwargs: Any) -> Any:
             try:
                 return func(self, *args, **kwargs)
             except host.PsutilError as ex:
                 try:
-                    with GpuProcess.INSTANCE_LOCK:
-                        del GpuProcess.INSTANCES[(self.pid, self.device)]
+                    with NpuProcess.INSTANCE_LOCK:
+                        del NpuProcess.INSTANCES[(self.pid, self.device)]
                 except (KeyError, AttributeError):
                     pass
                 try:
@@ -130,7 +130,7 @@ def auto_garbage_clean(
                         del HostProcess.INSTANCES[self.pid]
                 except KeyError:
                     pass
-                # See also `GpuProcess.failsafe`
+                # See also `NpuProcess.failsafe`
                 if fallback is _RAISE or not getattr(_USE_FALLBACK_WHEN_RAISE, 'value', False):
                     raise
                 if isinstance(fallback, tuple):
@@ -438,17 +438,17 @@ class HostProcess(host.Process, metaclass=ABCMeta):
 
 
 @HostProcess.register
-class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-public-methods
-    """Represent a process with the given PID running on the given GPU device.
+class NpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-public-methods
+    """Represent a process with the given PID running on the given NPU device.
 
     The instance will be cache during the lifetime of the process.
 
-    The same host process can use multiple GPU devices. The :class:`GpuProcess` instances
-    representing the same PID on the host but different GPU devices are different.
+    The same host process can use multiple NPU devices. The :class:`NpuProcess` instances
+    representing the same PID on the host but different NPU devices are different.
     """
 
     INSTANCE_LOCK: threading.RLock = threading.RLock()
-    INSTANCES: WeakValueDictionary[tuple[int, Device], GpuProcess] = WeakValueDictionary()
+    INSTANCES: WeakValueDictionary[tuple[int, Device], NpuProcess] = WeakValueDictionary()
 
     _pid: int
     _host: HostProcess
@@ -464,13 +464,13 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
         device: Device,
         *,
         # pylint: disable=unused-argument
-        gpu_memory: int | NaType | None = None,
-        gpu_instance_id: int | NaType | None = None,
+        npu_memory: int | NaType | None = None,
+        npu_instance_id: int | NaType | None = None,
         compute_instance_id: int | NaType | None = None,
         type: str | NaType | None = None,  # pylint: disable=redefined-builtin
         # pylint: enable=unused-argument
     ) -> Self:
-        """Return the cached instance of :class:`GpuProcess`."""
+        """Return the cached instance of :class:`NpuProcess`."""
         if pid is None:
             pid = os.getpid()
 
@@ -502,40 +502,40 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
         pid: int | None,  # pylint: disable=unused-argument
         device: Device,
         *,
-        gpu_memory: int | NaType | None = None,
-        gpu_instance_id: int | NaType | None = None,
+        npu_memory: int | NaType | None = None,
+        npu_instance_id: int | NaType | None = None,
         compute_instance_id: int | NaType | None = None,
         type: str | NaType | None = None,  # pylint: disable=redefined-builtin
     ) -> None:
         """Initialize the instance returned by :meth:`__new__()`."""
-        if gpu_memory is None and not hasattr(self, '_gpu_memory'):
-            gpu_memory = NA
-        if gpu_memory is not None:
-            self.set_gpu_memory(gpu_memory)
+        if npu_memory is None and not hasattr(self, '_npu_memory'):
+            npu_memory = NA
+        if npu_memory is not None:
+            self.set_npu_memory(npu_memory)
 
         if type is None and not hasattr(self, '_type'):
             type = NA
         if type is not None:
             self.type = type
 
-        if gpu_instance_id is not None and compute_instance_id is not None:
-            self._gpu_instance_id = gpu_instance_id if gpu_instance_id != UINT_MAX else NA
+        if npu_instance_id is not None and compute_instance_id is not None:
+            self._npu_instance_id = npu_instance_id if npu_instance_id != UINT_MAX else NA
             self._compute_instance_id = (
                 compute_instance_id if compute_instance_id != UINT_MAX else NA
             )
         else:
-            self._gpu_instance_id = self._compute_instance_id = NA
+            self._npu_instance_id = self._compute_instance_id = NA
 
         for util in ('sm', 'memory', 'encoder', 'decoder'):
-            if not hasattr(self, f'_gpu_{util}_utilization'):
-                setattr(self, f'_gpu_{util}_utilization', NA)
+            if not hasattr(self, f'_npu_{util}_utilization'):
+                setattr(self, f'_npu_{util}_utilization', NA)
 
     def __repr__(self) -> str:
-        """Return a string representation of the GPU process."""
-        return '{}(pid={}, gpu_memory={}, type={}, device={}, host={})'.format(  # noqa: UP032
+        """Return a string representation of the NPU process."""
+        return '{}(pid={}, npu_memory={}, type={}, device={}, host={})'.format(  # noqa: UP032
             self.__class__.__name__,
             self.pid,
-            self.gpu_memory_human(),
+            self.npu_memory_human(),
             self.type,
             self.device,
             self.host,
@@ -543,12 +543,12 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
 
     def __eq__(self, other: object) -> bool:
         """Test equality to other object."""
-        if not isinstance(other, (GpuProcess, host.Process)):
+        if not isinstance(other, (NpuProcess, host.Process)):
             return NotImplemented
         return self._ident == other._ident
 
     def __hash__(self) -> int:
-        """Return a hash value of the GPU process."""
+        """Return a hash value of the NPU process."""
         if self._hash is None:  # pylint: disable=access-member-before-definition
             self._hash = hash(self._ident)  # pylint: disable=attribute-defined-outside-init
         return self._hash
@@ -558,7 +558,7 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
 
         Raises:
             AttributeError:
-                If the attribute is not defined in either :class:`GpuProcess` nor :class:`HostProcess`.
+                If the attribute is not defined in either :class:`NpuProcess` nor :class:`HostProcess`.
             host.NoSuchProcess:
                 If the process is gone.
             host.AccessDenied:
@@ -588,99 +588,99 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
 
     @property
     def device(self) -> Device:
-        """The GPU device the process running on.
+        """The NPU device the process running on.
 
-        The same host process can use multiple GPU devices. The :class:`GpuProcess` instances
-        representing the same PID on the host but different GPU devices are different.
+        The same host process can use multiple NPU devices. The :class:`NpuProcess` instances
+        representing the same PID on the host but different NPU devices are different.
         """
         return self._device
 
-    def gpu_instance_id(self) -> int | NaType:
-        """The GPU instance ID of the MIG device, or :const:`nputop.NA` if not applicable."""
-        return self._gpu_instance_id
+    def npu_instance_id(self) -> int | NaType:
+        """The NPU instance ID of the MIG device, or :const:`nputop.NA` if not applicable."""
+        return self._npu_instance_id
 
     def compute_instance_id(self) -> int | NaType:
         """The compute instance ID of the MIG device, or :const:`nputop.NA` if not applicable."""
         return self._compute_instance_id
 
-    def gpu_memory(self) -> int | NaType:  # in bytes
-        """The used GPU memory in bytes, or :const:`nputop.NA` if not applicable."""
-        return self._gpu_memory
+    def npu_memory(self) -> int | NaType:  # in bytes
+        """The used NPU memory in bytes, or :const:`nputop.NA` if not applicable."""
+        return self._npu_memory
 
-    def gpu_memory_human(self) -> str | NaType:  # in human readable
-        """The used GPU memory in human readable format, or :const:`nputop.NA` if not applicable."""
-        return self._gpu_memory_human
+    def npu_memory_human(self) -> str | NaType:  # in human readable
+        """The used NPU memory in human readable format, or :const:`nputop.NA` if not applicable."""
+        return self._npu_memory_human
 
-    def gpu_memory_percent(self) -> float | NaType:  # in percentage
-        """The percentage of used GPU memory by the process, or :const:`nputop.NA` if not applicable."""
-        return self._gpu_memory_percent
+    def npu_memory_percent(self) -> float | NaType:  # in percentage
+        """The percentage of used NPU memory by the process, or :const:`nputop.NA` if not applicable."""
+        return self._npu_memory_percent
 
-    def gpu_sm_utilization(self) -> int | NaType:  # in percentage
+    def npu_sm_utilization(self) -> int | NaType:  # in percentage
         """The utilization rate of SM (Streaming Multiprocessor), or :const:`nputop.NA` if not applicable."""
-        return self._gpu_sm_utilization
+        return self._npu_sm_utilization
 
-    def gpu_memory_utilization(self) -> int | NaType:  # in percentage
-        """The utilization rate of GPU memory bandwidth, or :const:`nputop.NA` if not applicable."""
-        return self._gpu_memory_utilization
+    def npu_memory_utilization(self) -> int | NaType:  # in percentage
+        """The utilization rate of NPU memory bandwidth, or :const:`nputop.NA` if not applicable."""
+        return self._npu_memory_utilization
 
-    def gpu_encoder_utilization(self) -> int | NaType:  # in percentage
+    def npu_encoder_utilization(self) -> int | NaType:  # in percentage
         """The utilization rate of the encoder, or :const:`nputop.NA` if not applicable."""
-        return self._gpu_encoder_utilization
+        return self._npu_encoder_utilization
 
-    def gpu_decoder_utilization(self) -> int | NaType:  # in percentage
+    def npu_decoder_utilization(self) -> int | NaType:  # in percentage
         """The utilization rate of the decoder, or :const:`nputop.NA` if not applicable."""
-        return self._gpu_decoder_utilization
+        return self._npu_decoder_utilization
 
-    def set_gpu_memory(self, value: int | NaType) -> None:
-        """Set the used GPU memory in bytes."""
+    def set_npu_memory(self, value: int | NaType) -> None:
+        """Set the used NPU memory in bytes."""
         # pylint: disable=attribute-defined-outside-init
-        self._gpu_memory = memory_used = value
-        self._gpu_memory_human = bytes2human(self.gpu_memory())
+        self._npu_memory = memory_used = value
+        self._npu_memory_human = bytes2human(self.npu_memory())
         memory_total = self.device.memory_total()
-        gpu_memory_percent = NA
+        npu_memory_percent = NA
         if libnvml.nvmlCheckReturn(memory_used, int) and libnvml.nvmlCheckReturn(memory_total, int):
-            gpu_memory_percent = round(100.0 * memory_used / memory_total, 1)  # type: ignore[assignment]
-        self._gpu_memory_percent = gpu_memory_percent
+            npu_memory_percent = round(100.0 * memory_used / memory_total, 1)  # type: ignore[assignment]
+        self._npu_memory_percent = npu_memory_percent
 
-    def set_gpu_utilization(
+    def set_npu_utilization(
         self,
-        gpu_sm_utilization: int | NaType | None = None,
-        gpu_memory_utilization: int | NaType | None = None,
-        gpu_encoder_utilization: int | NaType | None = None,
-        gpu_decoder_utilization: int | NaType | None = None,
+        npu_sm_utilization: int | NaType | None = None,
+        npu_memory_utilization: int | NaType | None = None,
+        npu_encoder_utilization: int | NaType | None = None,
+        npu_decoder_utilization: int | NaType | None = None,
     ) -> None:
-        """Set the GPU utilization rates."""
+        """Set the NPU utilization rates."""
         # pylint: disable=attribute-defined-outside-init
-        if gpu_sm_utilization is not None:
-            self._gpu_sm_utilization = gpu_sm_utilization
-        if gpu_memory_utilization is not None:
-            self._gpu_memory_utilization = gpu_memory_utilization
-        if gpu_encoder_utilization is not None:
-            self._gpu_encoder_utilization = gpu_encoder_utilization
-        if gpu_decoder_utilization is not None:
-            self._gpu_decoder_utilization = gpu_decoder_utilization
+        if npu_sm_utilization is not None:
+            self._npu_sm_utilization = npu_sm_utilization
+        if npu_memory_utilization is not None:
+            self._npu_memory_utilization = npu_memory_utilization
+        if npu_encoder_utilization is not None:
+            self._npu_encoder_utilization = npu_encoder_utilization
+        if npu_decoder_utilization is not None:
+            self._npu_decoder_utilization = npu_decoder_utilization
 
-    def update_gpu_status(self) -> int | NaType:
-        """Update the GPU consumption status from a new NVML query."""
-        self.set_gpu_memory(NA)
-        self.set_gpu_utilization(NA, NA, NA, NA)
+    def update_npu_status(self) -> int | NaType:
+        """Update the NPU consumption status from a new NVML query."""
+        self.set_npu_memory(NA)
+        self.set_npu_utilization(NA, NA, NA, NA)
         processes = self.device.processes()
         process = processes.get(self.pid, self)
         if process is not self:
             # The current process is gone and the instance has been removed from the cache.
-            # Update GPU status from the new instance.
-            self.set_gpu_memory(process.gpu_memory())
-            self.set_gpu_utilization(
-                process.gpu_sm_utilization(),
-                process.gpu_memory_utilization(),
-                process.gpu_encoder_utilization(),
-                process.gpu_decoder_utilization(),
+            # Update NPU status from the new instance.
+            self.set_npu_memory(process.npu_memory())
+            self.set_npu_utilization(
+                process.npu_sm_utilization(),
+                process.npu_memory_utilization(),
+                process.npu_encoder_utilization(),
+                process.npu_decoder_utilization(),
             )
-        return self.gpu_memory()
+        return self.npu_memory()
 
     @property
     def type(self) -> str | NaType:
-        """The type of the GPU context.
+        """The type of the NPU context.
 
         The type is one of the following:
             - :data:`'C'`: compute context
@@ -718,7 +718,7 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
 
         Note:
             To return the fallback value rather than raise an exception, please use the context
-            manager :meth:`GpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
+            manager :meth:`NpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
         """
         return self.host.status()
 
@@ -734,7 +734,7 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
 
         Note:
             To return the fallback value rather than raise an exception, please use the context
-            manager :meth:`GpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
+            manager :meth:`NpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
         """
         return self.host.create_time()
 
@@ -750,7 +750,7 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
 
         Note:
             To return the fallback value rather than raise an exception, please use the context
-            manager :meth:`GpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
+            manager :meth:`NpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
         """
         return self.host.running_time()
 
@@ -765,7 +765,7 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
 
         Note:
             To return the fallback value rather than raise an exception, please use the context
-            manager :meth:`GpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
+            manager :meth:`NpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
         """
         return timedelta2human(self.running_time())
 
@@ -780,7 +780,7 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
 
         Note:
             To return the fallback value rather than raise an exception, please use the context
-            manager :meth:`GpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
+            manager :meth:`NpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
         """
         running_time = self.running_time()
         if running_time is NA:
@@ -803,7 +803,7 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
 
         Note:
             To return the fallback value rather than raise an exception, please use the context
-            manager :meth:`GpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
+            manager :meth:`NpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
         """
         if self._username is None:  # pylint: disable=access-member-before-definition
             self._username = self.host.username()  # pylint: disable=attribute-defined-outside-init
@@ -821,7 +821,7 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
 
         Note:
             To return the fallback value rather than raise an exception, please use the context
-            manager :meth:`GpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
+            manager :meth:`NpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
         """
         return self.host.name()
 
@@ -837,7 +837,7 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
 
         Note:
             To return the fallback value rather than raise an exception, please use the context
-            manager :meth:`GpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
+            manager :meth:`NpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
         """
         return self.host.cpu_percent()
 
@@ -853,7 +853,7 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
 
         Note:
             To return the fallback value rather than raise an exception, please use the context
-            manager :meth:`GpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
+            manager :meth:`NpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
         """  # pylint: disable=line-too-long
         return self.host.memory_percent()
 
@@ -871,7 +871,7 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
 
         Note:
             To return the fallback value rather than raise an exception, please use the context
-            manager :meth:`GpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
+            manager :meth:`NpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
         """
         return self.host.rss_memory()
 
@@ -886,7 +886,7 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
 
         Note:
             To return the fallback value rather than raise an exception, please use the context
-            manager :meth:`GpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
+            manager :meth:`NpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
         """
         return bytes2human(self.host_memory())
 
@@ -905,7 +905,7 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
 
         Note:
             To return the fallback value rather than raise an exception, please use the context
-            manager :meth:`GpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
+            manager :meth:`NpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
         """
         cmdline = self.host.cmdline()
         if len(cmdline) == 0 and not self._gone:
@@ -923,7 +923,7 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
 
         Note:
             To return the fallback value rather than raise an exception, please use the context
-            manager :meth:`GpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
+            manager :meth:`NpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
         """
         return command_join(self.cmdline())
 
@@ -954,12 +954,12 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
         *,
         host_process_snapshot_cache: dict[int, Snapshot] | None = None,
     ) -> Snapshot:
-        """Return a onetime snapshot of the process on the GPU device.
+        """Return a onetime snapshot of the process on the NPU device.
 
         Note:
             To return the fallback value rather than raise an exception, please use the context
-            manager :meth:`GpuProcess.failsafe`. Also, consider using the batched version to take
-            snapshots with :meth:`GpuProcess.take_snapshots`, which caches the results and reduces
+            manager :meth:`NpuProcess.failsafe`. Also, consider using the batched version to take
+            snapshots with :meth:`NpuProcess.take_snapshots`, which caches the results and reduces
             redundant queries. See also :meth:`take_snapshots` and :meth:`failsafe`.
         """
         host_process_snapshot_cache = host_process_snapshot_cache or {}
@@ -989,25 +989,25 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
             # device
             device=self.device,
             type=self.type,
-            gpu_instance_id=self.gpu_instance_id(),
+            npu_instance_id=self.npu_instance_id(),
             compute_instance_id=self.compute_instance_id(),
-            gpu_memory=self.gpu_memory(),
-            gpu_memory_human=self.gpu_memory_human(),
-            gpu_memory_percent=self.gpu_memory_percent(),
-            gpu_sm_utilization=self.gpu_sm_utilization(),
-            gpu_memory_utilization=self.gpu_memory_utilization(),
-            gpu_encoder_utilization=self.gpu_encoder_utilization(),
-            gpu_decoder_utilization=self.gpu_decoder_utilization(),
+            npu_memory=self.npu_memory(),
+            npu_memory_human=self.npu_memory_human(),
+            npu_memory_percent=self.npu_memory_percent(),
+            npu_sm_utilization=self.npu_sm_utilization(),
+            npu_memory_utilization=self.npu_memory_utilization(),
+            npu_encoder_utilization=self.npu_encoder_utilization(),
+            npu_decoder_utilization=self.npu_decoder_utilization(),
         )
 
     @classmethod
     def take_snapshots(  # batched version of `as_snapshot`
         cls,
-        gpu_processes: Iterable[GpuProcess],
+        npu_processes: Iterable[NpuProcess],
         *,
         failsafe: bool = False,
     ) -> list[Snapshot]:
-        """Take snapshots for a list of :class:`GpuProcess` instances.
+        """Take snapshots for a list of :class:`NpuProcess` instances.
 
         If *failsafe* is :data:`True`, then if any method fails, the fallback value in
         :func:`auto_garbage_clean` will be used.
@@ -1018,7 +1018,7 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
         )
         with context():
             return [
-                process.as_snapshot(host_process_snapshot_cache=cache) for process in gpu_processes
+                process.as_snapshot(host_process_snapshot_cache=cache) for process in npu_processes
             ]
 
     @classmethod
@@ -1027,16 +1027,16 @@ class GpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
         """A context manager that enables fallback values for methods that fail.
 
         Examples:
-            >>> p = GpuProcess(pid=10000, device=Device(0))  # process does not exist
+            >>> p = NpuProcess(pid=10000, device=Device(0))  # process does not exist
             >>> p
-            GpuProcess(pid=10000, gpu_memory=N/A, type=N/A, device=PhysicalDevice(index=0, name="NVIDIA GeForce RTX 3070", total_memory=8192MiB), host=HostProcess(pid=10000, status='terminated'))
+            NpuProcess(pid=10000, npu_memory=N/A, type=N/A, device=PhysicalDevice(index=0, name="NVIDIA GeForce RTX 3070", total_memory=8192MiB), host=HostProcess(pid=10000, status='terminated'))
             >>> p.cpu_percent()
             Traceback (most recent call last):
                 ...
             NoSuchProcess: process no longer exists (pid=10000)
 
             >>> # Failsafe to the fallback value instead of raising exceptions
-            ... with GpuProcess.failsafe():
+            ... with NpuProcess.failsafe():
             ...     print('fallback:              {!r}'.format(p.cpu_percent()))
             ...     print('fallback (float cast): {!r}'.format(float(p.cpu_percent())))  # `nputop.NA` can be cast to float or int
             ...     print('fallback (int cast):   {!r}'.format(int(p.cpu_percent())))    # `nputop.NA` can be cast to float or int

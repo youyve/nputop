@@ -1,4 +1,4 @@
-# This file is part of nputop, the interactive NVIDIA-GPU process viewer.
+# This file is part of nputop, the interactive NVIDIA-NPU process viewer.
 # License: GNU GPL version 3.
 
 # pylint: disable=missing-module-docstring,missing-class-docstring,missing-function-docstring
@@ -309,7 +309,7 @@ class TreeViewScreen(Displayable):  # pylint: disable=too-many-instance-attribut
             snapshot.username = WideString(snapshot.username)
             snapshot.prefix = node.prefix
             if len(node.devices) > 0:
-                snapshot.devices = 'GPU ' + ','.join(
+                snapshot.devices = 'NPU ' + ','.join(
                     dev.display_index
                     for dev in sorted(node.devices, key=lambda device: device.tuple_index)
                 )
@@ -408,7 +408,7 @@ class TreeViewScreen(Displayable):  # pylint: disable=too-many-instance-attribut
             self.addstr(
                 self.y + 1,
                 self.x,
-                'No running GPU processes found{}.'.format(' (in WSL)' if host.WSL else ''),
+                'No running NPU processes found{}.'.format(' (in WSL)' if host.WSL else ''),
             )
             return
 
