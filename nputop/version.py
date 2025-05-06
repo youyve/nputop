@@ -1,4 +1,4 @@
-"""An interactive NVIDIA-NPU process viewer and beyond, the one-stop solution for NPU process management."""
+"""An interactive Ascend-NPU process viewer and beyond, the one-stop solution for NPU process management."""
 
 # pylint: disable=invalid-name
 
