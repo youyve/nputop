@@ -14,7 +14,10 @@ from types import FunctionType
 from typing import TYPE_CHECKING, Any, Callable, Generator, Iterable
 from weakref import WeakValueDictionary
 
-from nputop.api import host, libnvml
+from nputop.api import host
+# ★★★ 关键：NVML → Ascend 兼容层 ★★★
+from nputop.api import libascend as libnvml
+
 from nputop.api.utils import (
     NA,
     UINT_MAX,
