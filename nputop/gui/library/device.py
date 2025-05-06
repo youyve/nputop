@@ -174,45 +174,4 @@ class Device(DeviceBase):
         return Device.INTENSITY2COLOR.get(Device.loading_intensity_of(utilization, type=type))
 
 
-class MigDevice(MigDeviceBase, Device):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
 
-        self._snapshot = None
-        self.tuple_index = (self.index,) if isinstance(self.index, int) else self.index
-        self.display_index = ':'.join(map(str, self.tuple_index))
-
-    def memory_usage(self) -> str:  # string of used memory over total memory (in human readable)
-        return f'{self.memory_used_human()} / {self.memory_total_human():>8s}'
-
-    loading_intensity = Device.memory_loading_intensity
-
-    SNAPSHOT_KEYS = [
-        'name',
-        'memory_used',
-        'memory_free',
-        'memory_total',
-        'memory_used_human',
-        'memory_free_human',
-        'memory_total_human',
-        'memory_percent',
-        'memory_usage',
-        'bar1_memory_used_human',
-        'bar1_memory_percent',
-        'npu_utilization',
-        'memory_utilization',
-        'total_volatile_uncorrected_ecc_errors',
-        'mig_mode',
-        'is_mig_device',
-        'npu_instance_id',
-        'compute_instance_id',
-        'memory_percent_string',
-        'memory_utilization_string',
-        'npu_utilization_string',
-        'memory_loading_intensity',
-        'memory_display_color',
-        'npu_loading_intensity',
-        'npu_display_color',
-        'loading_intensity',
-        'display_color',
-    ]
