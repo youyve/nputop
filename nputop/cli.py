@@ -1,3 +1,7 @@
+# This file is part of nputop, the interactive Ascend-NPU process viewer.
+# License: GNU GPL version 3.
+
+
 """The interactive Ascend-NPU process viewer."""
 
 import argparse

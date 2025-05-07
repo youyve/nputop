@@ -1,3 +1,7 @@
+# This file is part of nputop, the interactive Ascend-NPU process viewer.
+# License: GNU GPL version 3.
+
+
 # pylint: disable=missing-module-docstring,missing-class-docstring
 
 from unicodedata import east_asian_width
