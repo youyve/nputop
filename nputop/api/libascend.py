@@ -1,254 +1,160 @@
-"""
-libascend.py – Ascend NPU 的“伪 NVML”兼容层
-==========================================
-
-* 提供与 nputop 原 libnvml.py 相同的关键接口：
-    - nvmlQuery(...)
-    - nvmlCheckReturn(...)
-    - VERSIONED_PATTERN（保持占位）
-* 依赖：
-    - pyACL   (CANN 自带)
-    - npu-smi (Ascend 驱动自带)
-    - Python 标准库
-* 设计：
-    1. **pyACL 优先**：能直接拿到的数据走 ACL；
-    2. **npu-smi 兜底**：ACL 没有的，通过命令行解析；
-    3. 保证所有接口**不抛异常**，返回值类型稳定。
-"""
-
+# nputop/api/libascend.py  –  v6  (2024-05-07)
+# ===============================================================
+# Ascend “伪 NVML” 兼容层 – 极速实时刷新 & 稳定进程列表
+# ===============================================================
 from __future__ import annotations
-
-import atexit
-import re
-import subprocess
-import sys
-import threading
-from collections import namedtuple
+import atexit, os, re, shlex, subprocess, sys, threading, time
+from collections import defaultdict, namedtuple
 from types import ModuleType
-from typing import Any, Callable, TypeAlias
+from typing import Any, Callable, Dict, TypeAlias
 
-# ============================= 常量 =============================
+# ────────────────────────── 基本常量 ────────────────────────────
 NA: str = "N/A"
-UINT_MAX: int = 0xFFFFFFFF
-ULONGLONG_MAX: int = 0xFFFFFFFFFFFFFFFF
-
-# 占位类型，用于 isinstance 判断
+UINT_MAX = 0xFFFFFFFF
+ULONGLONG_MAX = 0xFFFFFFFFFFFFFFFF
+VERSIONED_PATTERN = re.compile(r"^(?P<name>\w+)(?P<suffix>_v\d+)$")
 c_aclDevice_t: TypeAlias = int
 
-# ============================= pyACL 初始化 =========================
-import acl  # pyACL
+# ────────────────────────── pyACL 初始化 ─────────────────────────
+import acl  # noqa:  E402
 
-__init_lock = threading.Lock()
-__inited = False
-__set_dev_once = False  # 必须先 set_device 才能用部分 ACL 接口
-
-
-def ascendInit(dev_id: int | None = None) -> None:
-    """线程安全 init；多次调用无害。"""
-    global __inited, __set_dev_once
-    with __init_lock:
-        if not __inited:
+_acl_lock = threading.Lock()
+_acl_inited = False
+def _acl_init() -> None:
+    global _acl_inited
+    with _acl_lock:
+        if not _acl_inited:
             acl.init()
-            __inited = True
-            atexit.register(ascendShutdown)
-        if (not __set_dev_once) and (dev_id is not None):
-            acl.rt.set_device(dev_id)
-            __set_dev_once = True
+            _acl_inited = True
+            atexit.register(lambda: acl.finalize())
 
-
-def ascendShutdown() -> None:
-    """Finalize ACL，上一次 init 对应一次 finalize。"""
-    global __inited
-    with __init_lock:
-        if __inited:
-            acl.finalize()
-            __inited = False
-
-
-def _ensure_init(dev_id: int | None = None) -> None:
-    ascendInit(dev_id)
-
-
-# ============================= npu-smi 工具 ========================
-def _run_smi(cmd: str) -> str:
-    """执行 npu-smi 并返回 stdout，异常返回空串。"""
+# ────────────────────────── 通用执行 & LRU ───────────────────────
+_LRU: Dict[str, tuple[float, str]] = {}
+def _run_smi(section: str, card: int | None = None, ttl: float = 1.0) -> str:
+    """小 TTL LRU 封装，避免反复 fork。"""
+    key = f"{section}-{card}"
+    now = time.time()
+    ts, out = _LRU.get(key, (0.0, ""))
+    if now - ts < ttl:
+        return out
+    cmd = f"npu-smi info -t {section}"
+    if card is not None:
+        cmd += f" -i {card}"
     try:
-        return subprocess.run(
-            cmd.split(), stdout=subprocess.PIPE, text=True, check=True
-        ).stdout
+        out = subprocess.check_output(shlex.split(cmd), text=True)
     except Exception:
-        return ""
+        out = ""
+    _LRU[key] = (now, out)
+    return out
 
-
-# ============================= 设备通用 API ========================
+# ────────────────────────── 设备 & SOC 名 ────────────────────────
+_dev_cnt: int | None = None
+_soc_name: str | None = None
 def ascendDeviceGetCount() -> int:
-    """
-    返回 Ascend 设备数量，兼容 pyACL 可能返 (count, ret) 或单值 count。
-    """
-    _ensure_init()
-    result = acl.rt.get_device_count()
-    if isinstance(result, (tuple, list)) and result:
-        count = result[0]
-    else:
-        count = result
-    try:
-        return int(count)
-    except Exception:
-        return 0
+    global _dev_cnt
+    if _dev_cnt is None:
+        _acl_init()
+        ret = acl.rt.get_device_count()
+        _dev_cnt = int(ret[0] if isinstance(ret, (list, tuple)) else ret)
+    return _dev_cnt
+def ascendDeviceGetName(_: int) -> str | None:
+    global _soc_name
+    if _soc_name is None:
+        _acl_init()
+        _soc_name = acl.get_soc_name()
+    return _soc_name
 
+# ────────────────────────── 显存信息 ────────────────────────────
+Mem = namedtuple("MemoryInfo", "total free used")
+def ascendDeviceGetMemoryInfo(dev: int) -> Mem:
+    _acl_init()
+    free, total, _ = acl.rt.get_mem_info(dev)
+    if total == 0:                          # 罕见旧固件
+        txt = _run_smi("usages", dev)
+        cap = re.search(r"HBM Capacity\(MB\)\s*:\s*(\d+)", txt)
+        total = int(cap.group(1)) * 2**20 if cap else 0
+        used_pct = re.search(r"HBM Usage Rate\(%\)\s*:\s*(\d+)", txt)
+        free = total * (100 - int(used_pct.group(1))) // 100 if used_pct else 0
+    return Mem(total, free, total - free)
 
-def ascendDeviceGetName(dev_id: int) -> str | None:
-    """返回设备型号字符串，例如 "Ascend910B"。"""
-    _ensure_init(dev_id)
-    return acl.get_soc_name(dev_id)
-
-
-# ---------- 显存 ----------
-def ascendDeviceGetMemoryInfo(dev_id: int):
-    """
-    返回 namedtuple(total, free, used)，单位 Byte
-    """
-    _ensure_init(dev_id)
-    free, total, _ = acl.rt.get_mem_info(dev_id)
-    used = total - free
-    Mem = namedtuple("MemoryInfo", "total free used")
-    return Mem(total, free, used)
-
-
-# ---------- 温度 ----------
+# ────────────────────────── 温度 / 功耗 ──────────────────────────
 _TEMP_RE = re.compile(r"NPU Temperature \(C\)\s*:\s*(\d+)", re.I)
+_POW_RE  = re.compile(r"Power\(W\)\s*:\s*([\d.]+)", re.I)
+def ascendDeviceGetTemperature(dev: int):
+    txt = _run_smi("temp", dev, ttl=1.0)
+    return int(_TEMP_RE.search(txt).group(1)) if _TEMP_RE.search(txt) else NA
+def ascendDeviceGetPowerUsage(dev: int):
+    txt = _run_smi("power", dev, ttl=1.0)
+    return int(float(_POW_RE.search(txt).group(1)) * 1000) if _POW_RE.search(txt) else NA
 
+# ────────────────────────── 利用率 ───────────────────────────────
+Util = namedtuple("UtilizationRates", "ai_core memory bandwidth aicpu")
+_acl_ok: Dict[int, bool] = defaultdict(lambda: True)
+def ascendDeviceGetUtilizationRates(dev: int):
+    """成功一次则永久走 ACL；失败一次则永久走 npu-smi."""
+    if _acl_ok[dev]:
+        _acl_init()
+        try:
+            info, ret = acl.rt.get_device_utilization_rate(dev)
+            if ret == 0:
+                return Util(info.cube_utilization, info.memory_utilization, NA, info.aicpu_utilization)
+        except Exception:
+            _acl_ok[dev] = False
+    # fallback：0.15 s TTL
+    txt = _run_smi("usages", dev, ttl=0.15)
+    ac = re.search(r"Aicore Usage Rate\(%\)\s*:\s*(\d+)", txt)
+    mu = re.search(r"HBM Usage Rate\(%\)\s*:\s*(\d+)", txt)
+    bw = re.search(r"HBM Bandwidth Usage Rate\(%\)\s*:\s*(\d+)", txt)
+    return Util(int(ac.group(1)) if ac else NA,
+                int(mu.group(1)) if mu else NA,
+                int(bw.group(1)) if bw else NA,
+                NA)
 
-def ascendDeviceGetTemperature(dev_id: int):
-    """
-    1) 尝试 `npu-smi info -t temp -i id`
-    2) 若不支持，再降级到 watch
-    """
-    txt = _run_smi(f"npu-smi info -t temp -i {dev_id}")
-    m = _TEMP_RE.search(txt)
-    if m:
-        return int(m.group(1))
-    # fallback：watch 抓第一行
-    txt = _run_smi(f"npu-smi info watch -i {dev_id} -s t -d 1")
-    m = _TEMP_RE.search(txt)
-    return int(m.group(1)) if m else NA
+# ────────────────────────── 进程列表 ────────────────────────────
+PROCESS_RE = re.compile(r"Process id:(\d+).*?Process memory\(MB\):(\d+)", re.I)
+PROC_RE_OLD = re.compile(r"^\s*(\d+)\s+(\d+)", re.M)
+Proc = namedtuple("Proc", "pid usedNpuMemory")
+_last_proc: Dict[int, list[Proc]] = defaultdict(list)
+def ascendDeviceGetProcessInfo(dev: int):
+    # 0.25 s 缓存
+    txt = _run_smi("proc-mem", dev, ttl=0.25)
+    procs: list[Proc] = [
+        Proc(int(pid), int(mem) * 2**20) for pid, mem in PROCESS_RE.findall(txt)
+    ] or [
+        Proc(int(pid), int(mem) * 2**20) for pid, mem in PROC_RE_OLD.findall(txt)
+    ]
+    if procs:
+        _last_proc[dev] = procs
+        return procs
+    return _last_proc[dev]      # 无解析结果 → 上次快照，避免闪烁
 
+# ────────────────────────── 驱动版本 ────────────────────────────
+def ascendSystemGetDriverVersion() -> str | None:
+    txt = _run_smi("board", ttl=30.0)
+    m = re.search(r"Driver Version\s*:\s*(\S+)", txt)
+    return m.group(1) if m else NA
 
-# ---------- 功耗 ----------
-_POWER_RE = re.compile(r"Power\(W\)\s*:\s*(\d+)", re.I)
+# ────────────────────────── NVML 兼容层 API ─────────────────────
+def nvmlCheckReturn(v: Any, types: type | tuple[type, ...] | None = None):  # noqa: ANN001
+    return v != NA and (isinstance(v, types) if types else True)
 
-
-def ascendDeviceGetPowerUsage(dev_id: int):
-    """返回 mW（与 NVML 单位对齐）。"""
-    txt = _run_smi(f"npu-smi info -t power -i {dev_id}")
-    m = _POWER_RE.search(txt)
-    return int(m.group(1)) * 1000 if m else NA
-
-
-# ---------- AI Core / Memory 利用率 ----------
-_UTIL_RE = {
-    "aicore": re.compile(r"Aicore Usage Rate\(%\)\s*:\s*(\d+)", re.I),
-    "mem":    re.compile(r"HBM Usage Rate\(%\)\s*:\s*(\d+)",    re.I),
-    "bw":     re.compile(r"HBM Bandwidth Usage Rate\(%\)\s*:\s*(\d+)", re.I),
-    "aicpu":  re.compile(r"Aicpu Usage Rate\(%\)\s*:\s*(\d+)",  re.I),
-}
-
-Util = namedtuple("UtilizationRates", "ai_core mem bandwidth aicpu")
-
-
-def ascendDeviceGetUtilizationRates(dev_id: int):
+def nvmlQuery(func: Callable[..., Any] | str, *a: Any, default: Any = NA, **kw: Any):  # noqa: ANN001
     try:
-        _ensure_init(dev_id)
-        info, ret = acl.rt.get_device_utilization_rate(dev_id)
-        if ret == 0:
-            # ACL 返回字段：cube_utilization, vector_utilization, aicpu_utilization, memory_utilization, utilization_extend
-            return Util(
-                info.cube_utilization,
-                info.memory_utilization,
-                NA,  # ACL 无带宽字段
-                info.aicpu_utilization,
-            )
-    except Exception:
-        pass
-
-    # fallback: 解析 npu-smi info -t usages
-    txt = _run_smi(f"npu-smi info -t usages -i {dev_id}")
-    vals = {}
-    for k, pat in _UTIL_RE.items():
-        m = pat.search(txt)
-        vals[k] = int(m.group(1)) if m else NA  
-    return Util(vals["aicore"], vals["mem"], vals["bw"], vals["aicpu"])
-
-
-# ---------- 进程显存列表 ----------
-_PROC_RE = re.compile(r"^\s*(\d+)\s+(\d+)", re.M)
-
-
-def ascendDeviceGetProcessInfo(dev_id: int):
-    """
-    返回 list of Proc(pid, usedNpuMemory)。
-    尝试 -t proc-mem，不行再 -t proc。
-    """
-    txt = _run_smi(f"npu-smi info -t proc-mem -i {dev_id}")
-    if not txt:
-        txt = _run_smi(f"npu-smi info -t proc -i {dev_id}")
-    procs = []
-    for pid, mem_mb in _PROC_RE.findall(txt):
-        proc = namedtuple("Proc", "pid usedNpuMemory")(int(pid), int(mem_mb) * 1024 * 1024)
-        procs.append(proc)
-    return procs
-
-
-# ============================= 兼容层核心 =========================
-def nvmlCheckReturn(value: Any, types: type | tuple[type, ...] | None = None) -> bool:
-    if value == NA:
-        return False
-    return isinstance(value, types) if types else True
-
-
-def nvmlQuery(
-    func: Callable[..., Any] | str,
-    *args: Any,
-    default: Any = NA,
-    ignore_errors: bool = True,
-    **kwargs: Any,
-) -> Any:
-    """
-    Ascend 版万能查询器：
-      - func 可为可调用对象或字符串名（本模块内）
-      - 异常或返回 NA 时返 default（除非 ignore_errors=False）
-    """
-    try:
-        if args and isinstance(args[0], int):
-            _ensure_init(args[0])
-        else:
-            _ensure_init()
+        _acl_init()
         if isinstance(func, str):
             func = globals()[func]
-        return func(*args, **kwargs)
+        return func(*a, **kw)
     except Exception:
         return default
 
-
-# ---------------- 保持 VERSIONED_PATTERN 占位 ----------------
-VERSIONED_PATTERN = re.compile(r"^(?P<name>\w+)(?P<suffix>_v\d+)$")
-
-# ============================= 模块自包装 ====================
-class _CustomModule(ModuleType):
-    """支持 `with libascend:` 语法，及 getattr 兜底。"""
-
-    def __getattr__(self, item: str):
-        try:
-            return globals()[item]
-        except KeyError:
-            raise AttributeError(item)
-
-    def __enter__(self):
-        ascendInit()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        ascendShutdown()
-
-
-sys.modules[__name__].__class__ = _CustomModule
+# ────────────────────────── 模块包装 (with 支持) ────────────────
+class _Mod(ModuleType):
+    def __getattr__(self, n):       # noqa: ANN001
+        if n in globals():
+            return globals()[n]
+        raise AttributeError(n)
+    def __enter__(self):            # noqa: D401
+        _acl_init(); return self
+    def __exit__(self, *_):
+        return False
+sys.modules[__name__].__class__ = _Mod
