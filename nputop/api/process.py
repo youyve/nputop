@@ -639,14 +639,20 @@ class NpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
         return self._npu_decoder_utilization
 
     def set_npu_memory(self, value: int | NaType) -> None:
-        """Set the used NPU memory in bytes."""
+        """Set the used NPU memory in bytes (并保证百分比计算安全)."""
         # pylint: disable=attribute-defined-outside-init
         self._npu_memory = memory_used = value
         self._npu_memory_human = bytes2human(self.npu_memory())
-        memory_total = self.device.memory_total()
-        npu_memory_percent = NA
-        if libnvml.nvmlCheckReturn(memory_used, int) and libnvml.nvmlCheckReturn(memory_total, int):
-            npu_memory_percent = round(100.0 * memory_used / memory_total, 1)  # type: ignore[assignment]
+
+        memory_total = self.device.memory_total()          # 可能是 0 / 'N/A'
+        npu_memory_percent: float | NaType = NA
+        if (
+            libnvml.nvmlCheckReturn(memory_used, int)
+            and libnvml.nvmlCheckReturn(memory_total, int)
+            and memory_total > 0                            # ← 关键保护
+        ):
+            npu_memory_percent = round(100.0 * memory_used / memory_total, 1)
+
         self._npu_memory_percent = npu_memory_percent
 
     def set_npu_utilization(
