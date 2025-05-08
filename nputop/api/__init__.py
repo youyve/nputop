@@ -18,7 +18,7 @@
 
 """The core APIs of nputop."""
 
-from nputop.api import collector, device, host, libnvml, process, utils
+from nputop.api import collector, device, host, process, utils
 from nputop.api.collector import ResourceMetricCollector, collect_in_background, take_snapshots
 from nputop.api.device import (
     CudaDevice,
@@ -29,7 +29,6 @@ from nputop.api.device import (
     normalize_cuda_visible_devices,
     parse_cuda_visible_devices,
 )
-from nputop.api.libnvml import NVMLError, nvmlCheckReturn
 from nputop.api.process import NpuProcess, HostProcess, command_join
 from nputop.api.utils import (  # explicitly export these to appease mypy
     NA,
@@ -56,9 +55,6 @@ from nputop.api.utils import (  # explicitly export these to appease mypy
 
 
 __all__ = [
-    'NVMLError',
-    'nvmlCheckReturn',
-    'libnvml',
     # nputop.api.device
     'Device',
     'PhysicalDevice',

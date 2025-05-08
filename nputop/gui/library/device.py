@@ -9,7 +9,7 @@ from cachetools.func import ttl_cache
 from nputop.api import NA
 from nputop.api import MigDevice as MigDeviceBase
 from nputop.api import PhysicalDevice as DeviceBase
-from nputop.api import libnvml, utilization2string
+from nputop.api import utilization2string
 from nputop.gui.library.process import NpuProcess
 
 
@@ -122,10 +122,7 @@ class Device(DeviceBase):
         return utilization2string(self.fan_speed())
 
     def temperature_string(self):  # in Celsius
-        temperature = self.temperature()
-        if libnvml.nvmlCheckReturn(temperature, int):
-            temperature = str(temperature) + 'C'
-        return temperature
+        return self.temperature()
 
     def memory_loading_intensity(self):
         return self.loading_intensity_of(self.memory_percent(), type='memory')

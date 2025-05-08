@@ -10,7 +10,7 @@ import os
 import sys
 import textwrap
 
-from nputop.api import HostProcess, libnvml
+from nputop.api import HostProcess
 from nputop.gui import UI, USERNAME, Device, colored, libcurses, set_color, setlocale_utf8
 from nputop.version import __version__
 
@@ -382,43 +382,6 @@ def main() -> int:
 
     ui.print()
     ui.destroy()
-
-    if len(libnvml.UNKNOWN_FUNCTIONS) > 0:
-        unknown_function_messages = [
-            (
-                'ERROR: Some FunctionNotFound errors occurred while calling:'
-                if len(libnvml.UNKNOWN_FUNCTIONS) > 1
-                else 'ERROR: A FunctionNotFound error occurred while calling:'
-            ),
-        ]
-        unknown_function_messages.extend(
-            f'    nvmlQuery({(func.__name__ if not isinstance(func, str) else func)!r}, *args, **kwargs)'
-            for func, _ in libnvml.UNKNOWN_FUNCTIONS.values()
-        )
-        unknown_function_messages.append(
-            (
-                'Please verify whether the `nvidia-ml-py` package is compatible with your NVIDIA driver version.\n'
-                'You can check the release history of `nvidia-ml-py` and install the compatible version manually.\n'
-                'See {} for more information.'
-            ).format(
-                colored('https://github.com/XuehaiPan/nputop#installation', attrs=('underline',)),
-            ),
-        )
-
-    if libnvml._pynvml_installation_corrupted:  # pylint: disable=protected-access
-        message = textwrap.dedent(
-            """
-            WARNING: The `nvidia-ml-py` package is corrupted. Please reinstall it using:
-
-                pip3 install --force-reinstall nputop nvidia-ml-py
-
-            or install `nputop` in an isolated environment:
-
-                pip3 install --upgrade pipx
-                pipx run nputop
-            """,
-        )
-        messages.append(message.strip() + '\n')
 
     if len(messages) > 0:
         for message in messages:

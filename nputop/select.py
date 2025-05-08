@@ -28,7 +28,7 @@ import sys
 import warnings
 from typing import TYPE_CHECKING, Callable, Iterable, Sequence, overload
 
-from nputop.api import Device, NpuProcess, Snapshot, colored, host, human2bytes, libnvml
+from nputop.api import Device, NpuProcess, Snapshot, colored, host, human2bytes
 from nputop.version import __version__
 
 
