@@ -4,6 +4,7 @@
 [![Python Versions](https://img.shields.io/badge/python-3.7%2B-blue.svg)](https://www.python.org/)
 ![Platform](https://img.shields.io/badge/platform-linux-green)
 [![GitHub Repo Stars](https://img.shields.io/github/stars/youyve/nputop?label=stars&logo=github&color=brightgreen)](https://github.com/youyve/nputop/stargazers)
+[![中文文档](https://img.shields.io/badge/Docs-中文-red)](README_zh.md)
 
 ---
 
@@ -36,7 +37,7 @@
 * Ascend NPU Drivers and Runtime Environment ([CANN](https://www.hiascend.com/software/cann/commercial))
 
 ```bash
-pip install nputop
+pip install ascend-nputop
 ```
 
 For development or editable installations:

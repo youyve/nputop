@@ -35,7 +35,7 @@
 * Ascend NPU 驱动和运行时环境 ([CANN](https://www.hiascend.com/software/cann/commercial))
 
 ```bash
-pip install nputop
+pip install ascend-nputop
 ```
 
 对于开发或可编辑安装：
