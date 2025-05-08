@@ -3,7 +3,7 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nputop"
+name = "ascend-nputop"
 description = "An interactive Ascend-NPU process viewer."
 readme = "README.md"
 requires-python = ">= 3.7"
@@ -31,8 +31,6 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
-    "Environment :: NPU",
-    "Environment :: NPU :: Ascend",
     "Environment :: Console",
     "Environment :: Console :: Curses",
     "Intended Audience :: Developers",

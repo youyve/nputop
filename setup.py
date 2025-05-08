@@ -85,7 +85,7 @@ with vcs_version(
     }
     
     setup(
-        name="nputop",
+        name="ascend-nputop",
         version=version.__version__,
         description="An interactive Ascend-NPU process viewer.",
         author="Lianzhong You",
