@@ -1,2 +1,4 @@
 nputop.egg-info/
 __pycache__/
+dist/
+ascend_nputop.egg-info/
