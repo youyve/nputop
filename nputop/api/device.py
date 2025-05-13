@@ -28,12 +28,7 @@ import os
 import threading
 from typing import Any, Generator, Iterable, NamedTuple
 
-# 在 Ascend 环境下加载 libascend；非 Ascend 则 fallback 到真正的 NVML 兼容层
-try:
-    from nputop.api import libascend as libnvml
-except ImportError:
-    from nputop.api import libnvml  # type: ignore
-
+from nputop.api import libascend as libnvml
 from nputop.api.process import NpuProcess
 from nputop.api.utils import (
     NA,
