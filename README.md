@@ -1,7 +1,7 @@
 # nputop: Interactive Ascend-NPU Process Viewer 🚀
 
 [![License](https://img.shields.io/badge/license-Apache%202.0%20%7C%20GPLv3-blue.svg)](LICENSE)
-[![Python Versions](https://img.shields.io/badge/python-3.7%2B-blue.svg)](https://www.python.org/)
+[![Python Versions](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 ![Platform](https://img.shields.io/badge/platform-linux-green)
 [![GitHub Repo Stars](https://img.shields.io/github/stars/youyve/nputop?label=stars&logo=github&color=brightgreen)](https://github.com/youyve/nputop/stargazers)
 [![中文文档](https://img.shields.io/badge/Docs-中文-red)](README_zh.md)
@@ -33,7 +33,7 @@
 
 **Prerequisites:**
 
-* Python ≥ 3.7
+* Python ≥ 3.10
 * Ascend NPU Drivers and Runtime Environment ([CANN](https://www.hiascend.com/software/cann/commercial))
 
 ```bash
@@ -95,9 +95,9 @@ nputop
 
 ## 📋 Known Issues & Roadmap
 
-* 🚧 **Slow startup** compared to GPU-based solutions.
+* 🚧 **Metrics acquisition anomalies** for single NPU displays.
 * 🚧 **Incomplete parameter display** for some NPU metrics.
-* 🚧 **Delayed utilization (UTL) refresh rate** and real-time process tracking issues.
+* 🚧 **Real-time process tracking issues**, such as abnormal process name display.
 
 These performance issues and feature gaps are being actively addressed in ongoing development iterations. Contributions are highly encouraged to help us improve `nputop`.
 

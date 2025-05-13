@@ -1,7 +1,7 @@
 # nputop：交互式 Ascend NPU 进程查看器 🚀
 
 [![许可证](https://img.shields.io/badge/license-Apache%202.0%20%7C%20GPLv3-blue.svg)](LICENSE)
-[![Python 版本](https://img.shields.io/badge/python-3.7%2B-blue.svg)](https://www.python.org/)
+[![Python 版本](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 ![平台](https://img.shields.io/badge/platform-linux-green)
 [![GitHub 星标](https://img.shields.io/github/stars/youyve/nputop?label=stars&logo=github&color=brightgreen)](https://github.com/youyve/nputop/stargazers)
 
@@ -31,7 +31,7 @@
 
 **前置条件：**
 
-* Python ≥ 3.7
+* Python ≥ 3.10
 * Ascend NPU 驱动和运行时环境 ([CANN](https://www.hiascend.com/software/cann/commercial))
 
 ```bash
@@ -93,9 +93,9 @@ nputop
 
 ## 📋 已知问题与路线图
 
-* 🚧 **启动速度慢**，相比 GPU 解决方案。
-* 🚧 **部分 NPU 指标显示不完整**。
-* 🚧 **利用率（UTL）刷新率延迟** 和实时进程跟踪问题。
+* 🚧 单NPU显示的指标获取可能存在异常。
+* 🚧 某些NPU指标的参数显示还不完整。
+* 🚧 实时进程跟踪功能存在一些问题，如进程名显示异常等。
 
 这些性能问题和功能差距正在持续开发中积极解决。热烈欢迎贡献以帮助改进 `nputop`。
 
