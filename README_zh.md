@@ -23,6 +23,8 @@
 
 ## 📸 截图
 
+![](assets/w_nputop3.png)
+
 ![](assets/ascend-npu.png)
 
 ---
