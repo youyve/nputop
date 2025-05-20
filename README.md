@@ -1,9 +1,11 @@
 # nputop: Interactive Ascend-NPU Process Viewer 🚀
 
-[![License](https://img.shields.io/badge/license-Apache%202.0%20%7C%20GPLv3-blue.svg)](LICENSE)
-[![Python Versions](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Python Versions](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
+[![Conda Downloads](https://img.shields.io/conda/dn/conda-forge/nputop?label=conda%20downloads&color=orange&logo=anaconda)](https://anaconda.org/conda-forge/nputop)
+[![PyPI Downloads](https://static.pepy.tech/badge/ascend-nputop)](https://pepy.tech/project/ascend-nputop)
 ![Platform](https://img.shields.io/badge/platform-linux-green)
 [![GitHub Repo Stars](https://img.shields.io/github/stars/youyve/nputop?label=stars&logo=github&color=brightgreen)](https://github.com/youyve/nputop/stargazers)
+[![License](https://img.shields.io/badge/license-Apache%202.0%20%7C%20GPLv3-blue.svg)](LICENSE)
 [![中文文档](https://img.shields.io/badge/Docs-中文-red)](README_zh.md)
 
 ---
@@ -24,7 +26,7 @@
 
 ## 📸 Screenshots
 
-![](assets/w_nputop3.png)
+![](assets/nputop0514_3.png)
 
 ![](assets/ascend-npu.png)
 
@@ -66,7 +68,7 @@ set environment variables (`ASCEND_RT_VISIBLE_DEVICES`) to restrict visible NPUs
 
 ## 🔑 Usage & Shortcuts
 
-* Navigate screens: <kbd>←</kbd> <kbd>→</kbd> or <kbd>TAB</kbd>
+* Navigate screens: <kbd>↑</kbd> <kbd>↓</kbd> or <kbd>TAB</kbd>
 * Sort columns: <kbd>S</kbd>
 * Toggle compact mode: <kbd>C</kbd>
 * Kill a process: select a process and press <kbd>K</kbd>
@@ -96,10 +98,8 @@ nputop
 ---
 
 ## 📋 Known Issues & Roadmap
-
-* 🚧 **Metrics acquisition anomalies** for single NPU displays.
+* 🚧 **Limited support for Ascend**: Currently, only Ascend 910 Series are fully supported.
 * 🚧 **Incomplete parameter display** for some NPU metrics.
-* 🚧 **Real-time process tracking issues**, such as abnormal process name display.
 
 These performance issues and feature gaps are being actively addressed in ongoing development iterations. Contributions are highly encouraged to help us improve `nputop`.
 

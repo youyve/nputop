@@ -1,9 +1,11 @@
 # nputop：交互式 Ascend NPU 进程查看器 🚀
 
-[![许可证](https://img.shields.io/badge/license-Apache%202.0%20%7C%20GPLv3-blue.svg)](LICENSE)
-[![Python 版本](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-![平台](https://img.shields.io/badge/platform-linux-green)
-[![GitHub 星标](https://img.shields.io/github/stars/youyve/nputop?label=stars&logo=github&color=brightgreen)](https://github.com/youyve/nputop/stargazers)
+[![Python Versions](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
+[![Conda Downloads](https://img.shields.io/conda/dn/conda-forge/nputop?label=conda%20downloads&color=orange&logo=anaconda)](https://anaconda.org/conda-forge/nputop)
+[![PyPI Downloads](https://static.pepy.tech/badge/ascend-nputop)](https://pepy.tech/project/ascend-nputop)
+![Platform](https://img.shields.io/badge/platform-linux-green)
+[![GitHub Repo Stars](https://img.shields.io/github/stars/youyve/nputop?label=stars&logo=github&color=brightgreen)](https://github.com/youyve/nputop/stargazers)
+[![License](https://img.shields.io/badge/license-Apache%202.0%20%7C%20GPLv3-blue.svg)](LICENSE)
 
 ---
 
@@ -23,7 +25,7 @@
 
 ## 📸 截图
 
-![](assets/w_nputop3.png)
+![](assets/nputop0514_3.png)
 
 ![](assets/ascend-npu.png)
 
@@ -64,7 +66,7 @@ nputop
 
 ## 🔑 使用方法与快捷键
 
-* 切换屏幕：<kbd>←</kbd> <kbd>→</kbd> 或 <kbd>TAB</kbd>
+* 切换屏幕：<kbd>↑</kbd> <kbd>↓</kbd> or <kbd>TAB</kbd>
 * 排序列：<kbd>S</kbd>
 * 切换紧凑模式：<kbd>C</kbd>
 * 终止进程：选择一个进程并按 <kbd>K</kbd>
@@ -95,9 +97,8 @@ nputop
 
 ## 📋 已知问题与路线图
 
-* 🚧 单NPU显示的指标获取可能存在异常。
+* 🚧 **对 Ascend 的支持有限**：目前仅完全支持 Ascend 910 系列。
 * 🚧 某些NPU指标的参数显示还不完整。
-* 🚧 实时进程跟踪功能存在一些问题，如进程名显示异常等。
 
 这些性能问题和功能差距正在持续开发中积极解决。热烈欢迎贡献以帮助改进 `nputop`。
 
@@ -115,7 +116,7 @@ nputop
 
 ## 📃 许可证
 
-本项目（`nputop`）衍生自原始项目 [`nvitop`](https://github.com/XuehaiPan/nvitop)，作者为薛海攀。
+本项目（`nputop`）衍生自原始项目 [`nvitop`](https://github.com/XuehaiPan/nvitop)，作者为Xuehai Pan。
 
 适用的许可证为：
 
