@@ -1,8 +1,8 @@
 # nputop: Interactive Ascend-NPU Process Viewer 🚀
 
 [![Python Versions](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
-[![Conda Downloads](https://img.shields.io/conda/dn/conda-forge/nputop?label=conda%20downloads&color=orange&logo=anaconda)](https://anaconda.org/conda-forge/nputop)
-[![PyPI Downloads](https://static.pepy.tech/badge/ascend-nputop)](https://pepy.tech/project/ascend-nputop)
+[![PyPI](https://img.shields.io/badge/-PyPI-informational?logo=pypi)![PyPI Downloads](https://static.pepy.tech/badge/ascend-nputop)](https://pepy.tech/project/ascend-nputop)
+[![Conda Downloads](https://img.shields.io/conda/dn/conda-forge/nputop?label=Conda%20downloads&logo=anaconda&color=orange)](https://anaconda.org/conda-forge/nputop)
 ![Platform](https://img.shields.io/badge/platform-linux-green)
 [![GitHub Repo Stars](https://img.shields.io/github/stars/youyve/nputop?label=stars&logo=github&color=brightgreen)](https://github.com/youyve/nputop/stargazers)
 [![License](https://img.shields.io/badge/license-Apache%202.0%20%7C%20GPLv3-blue.svg)](LICENSE)
@@ -37,9 +37,23 @@
 
 **Prerequisites:**
 
-* Python ≥ 3.10
-* Ascend NPU Drivers and Runtime Environment ([CANN](https://www.hiascend.com/software/cann/commercial))
+* Python ≥ 3.9
+* Ascend NPU Driver([Ascend NPU Drivers](https://www.hiascend.com/en/hardware/firmware-drivers/community))
 
+
+If you're using Conda, we recommend installing nputop via conda-forge:
+```bash
+# Option 1: without changing default config
+conda install -c conda-forge nputop
+
+# Option 2 (recommended): set conda-forge as highest-priority channel
+conda config --add channels conda-forge
+conda config --set channel_priority strict
+
+# Then install
+conda install nputop
+```
+Or, if you prefer to use pip, you can install it directly from PyPI:
 ```bash
 pip install ascend-nputop
 ```
@@ -69,7 +83,6 @@ set environment variables (`ASCEND_RT_VISIBLE_DEVICES`) to restrict visible NPUs
 ## 🔑 Usage & Shortcuts
 
 * Navigate screens: <kbd>↑</kbd> <kbd>↓</kbd> or <kbd>TAB</kbd>
-* Sort columns: <kbd>S</kbd>
 * Toggle compact mode: <kbd>C</kbd>
 * Kill a process: select a process and press <kbd>K</kbd>
 * Refresh manually: <kbd>R</kbd>

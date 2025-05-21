@@ -1,8 +1,8 @@
 # nputop：交互式 Ascend NPU 进程查看器 🚀
 
 [![Python Versions](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
-[![Conda Downloads](https://img.shields.io/conda/dn/conda-forge/nputop?label=conda%20downloads&color=orange&logo=anaconda)](https://anaconda.org/conda-forge/nputop)
-[![PyPI Downloads](https://static.pepy.tech/badge/ascend-nputop)](https://pepy.tech/project/ascend-nputop)
+[![PyPI](https://img.shields.io/badge/-PyPI-informational?logo=pypi)![PyPI Downloads](https://static.pepy.tech/badge/ascend-nputop)](https://pepy.tech/project/ascend-nputop)
+[![Conda Downloads](https://img.shields.io/conda/dn/conda-forge/nputop?label=Conda%20downloads&logo=anaconda&color=orange)](https://anaconda.org/conda-forge/nputop)
 ![Platform](https://img.shields.io/badge/platform-linux-green)
 [![GitHub Repo Stars](https://img.shields.io/github/stars/youyve/nputop?label=stars&logo=github&color=brightgreen)](https://github.com/youyve/nputop/stargazers)
 [![License](https://img.shields.io/badge/license-Apache%202.0%20%7C%20GPLv3-blue.svg)](LICENSE)
@@ -35,14 +35,29 @@
 
 **前置条件：**
 
-* Python ≥ 3.10
-* Ascend NPU 驱动和运行时环境 ([CANN](https://www.hiascend.com/software/cann/commercial))
+* Python ≥ 3.9
+* Ascend NPU 驱动程序（[Ascend NPU 驱动](https://www.hiascend.com/hardware/firmware-drivers/community)）
 
+如果你使用的是 Conda，推荐通过 [conda-forge](https://anaconda.org/conda-forge/nputop) 安装：
+
+```bash
+# 方式一：直接指定 conda-forge 频道安装
+conda install -c conda-forge nputop
+
+# 方式二（推荐）：将 conda-forge 设置为默认优先频道
+conda config --add channels conda-forge
+conda config --set channel_priority strict
+
+# 然后安装
+conda install nputop
+```
+
+或者，如果你喜欢使用 pip，可以直接从 PyPI 安装：
 ```bash
 pip install ascend-nputop
 ```
 
-对于开发或可编辑安装：
+如需开发或本地可编辑安装：
 
 ```bash
 git clone https://github.com/youyve/nputop.git
@@ -67,7 +82,6 @@ nputop
 ## 🔑 使用方法与快捷键
 
 * 切换屏幕：<kbd>↑</kbd> <kbd>↓</kbd> or <kbd>TAB</kbd>
-* 排序列：<kbd>S</kbd>
 * 切换紧凑模式：<kbd>C</kbd>
 * 终止进程：选择一个进程并按 <kbd>K</kbd>
 * 手动刷新：<kbd>R</kbd>
