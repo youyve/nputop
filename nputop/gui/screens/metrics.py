@@ -137,17 +137,17 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
         total_npu_memory_human = bytes2human(total_npu_memory)
 
         def format_cpu_percent(value):
-            if value is NA:
+            if value == NA:
                 return f'CPU: {value}'
             return f'CPU: {value:.1f}%'
 
         def format_max_cpu_percent(value):
-            if value is NA:
+            if value == NA:
                 return f'MAX CPU: {value}'
             return f'MAX CPU: {value:.1f}%'
 
         def format_host_memory(value):
-            if value is NA:
+            if value == NA:
                 return f'HOST-MEM: {value}'
             return 'HOST-MEM: {} ({:.1f}%)'.format(  # noqa: UP032
                 bytes2human(value),
@@ -155,7 +155,7 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
             )
 
         def format_max_host_memory(value):
-            if value is NA:
+            if value == NA:
                 return f'MAX HOST-MEM: {value}'
             return 'MAX HOST-MEM: {} ({:.1f}%) / {}'.format(  # noqa: UP032
                 bytes2human(value),
@@ -164,7 +164,7 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
             )
 
         def format_npu_memory(value):
-            if value is not NA and total_npu_memory is not NA:
+            if value != NA and total_npu_memory != NA:
                 return 'NPU-MEM: {} ({:.1f}%)'.format(  # noqa: UP032
                     bytes2human(value),
                     round(100.0 * value / total_npu_memory, 1),
@@ -172,7 +172,7 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
             return f'NPU-MEM: {value}'
 
         def format_max_npu_memory(value):
-            if value is not NA and total_npu_memory is not NA:
+            if value != NA and total_npu_memory != NA:
                 return 'MAX NPU-MEM: {} ({:.1f}%) / {}'.format(  # noqa: UP032
                     bytes2human(value),
                     round(100.0 * value / total_npu_memory, 1),
@@ -181,12 +181,12 @@ class ProcessMetricsScreen(Displayable):  # pylint: disable=too-many-instance-at
             return f'MAX NPU-MEM: {value}'
 
         def format_sm(value):
-            if value is NA:
+            if value == NA:
                 return f'NPU-SM: {value}'
             return f'NPU-SM: {value:.1f}%'
 
         def format_max_sm(value):
-            if value is NA:
+            if value == NA:
                 return f'MAX NPU-SM: {value}'
             return f'MAX NPU-SM: {value:.1f}%'
 

@@ -796,7 +796,7 @@ class NpuProcess:  # pylint: disable=too-many-instance-attributes,too-many-publi
             manager :meth:`NpuProcess.failsafe`. See also :meth:`take_snapshots` and :meth:`failsafe`.
         """
         running_time = self.running_time()
-        if running_time is NA:
+        if running_time == NA:
             return NA
         return running_time.total_seconds()
 

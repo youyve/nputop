@@ -159,7 +159,7 @@ class Device(DeviceBase):
             'memory': Device.MEMORY_UTILIZATION_THRESHOLDS,
             'npu': Device.NPU_UTILIZATION_THRESHOLDS,
         }.get(type)
-        if utilization is NA:
+        if utilization == NA:
             return 'moderate'
         if isinstance(utilization, str):
             utilization = utilization.replace('%', '')

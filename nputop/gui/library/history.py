@@ -207,7 +207,7 @@ class HistoryGraph:  # pylint: disable=too-many-instance-attributes
             return NA
 
     def add(self, value):
-        if value is NA:
+        if value == NA:
             value = self.baseline - 0.1
         if not isinstance(value, (int, float)):
             return
@@ -340,7 +340,7 @@ class BufferedHistoryGraph(HistoryGraph):
         return last_value
 
     def add(self, value):
-        if value is NA:
+        if value == NA:
             value = self.baseline - 0.1
         if not isinstance(value, (int, float)):
             return

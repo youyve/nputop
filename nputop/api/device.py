@@ -205,7 +205,7 @@ class Device:  # pylint: disable=too-many-instance-attributes
         return self.memory_info().free
 
     def memory_total_human(self) -> str | NaType:
-        if self._memory_total_human is NA:
+        if self._memory_total_human == NA:
             self._memory_total_human = bytes2human(self.memory_total())
         return self._memory_total_human
 
