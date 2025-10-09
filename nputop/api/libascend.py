@@ -15,12 +15,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 from __future__ import annotations
-import atexit, subprocess, re, threading, time, sys
+import subprocess, re, time, sys
 from collections import namedtuple
 from types import ModuleType
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
+
 # --------- 常量 ----------
 NA            : str  = "N/A"
 UINT_MAX      : int  = 0xFFFFFFFF
@@ -35,50 +36,68 @@ _cache_ts   = 0.0
 
 # --------- Regex ----------
 _RE_L1 = re.compile(r"^\|\s*(\d+)\s+(\S+).*?\|\s*(\S+)\s+\|\s*([\d.]+)\s+(\d+)")
-_RE_L2 = re.compile(r"^\|\s*\d+\s+\|\s+([0-9A-Fa-f:.]+).*?\|\s+(\d+)")
+_RE_L2 = re.compile(r"^\|\s*[\d\s]+\|\s*([0-9A-Fa-f:.]+|NA)\s*\|\s*(\d+).*?\|$")
 _RE_P  = re.compile(r"^\|\s*(\d+)\s+\d+\s+\|\s+(\d+)\s+\|.*?\|\s+(\d+)")
 
-def _update_cache() -> None:
+Util = namedtuple("UtilizationRates", ["npu", "mem", "bandwidth", "aicpu"])
+
+def _update_cache(raw: str = None) -> None:
     global _cache_ts
     if time.time() - _cache_ts < _CACHE_TTL:
         return
 
-    raw = subprocess.run(
-        ["npu-smi","info"], text=True, capture_output=True, timeout=3
-    ).stdout.splitlines()
+    if not raw:
+        raw = subprocess.run(
+            ["npu-smi","info"], text=True, capture_output=True, timeout=3
+        ).stdout
+    raw = raw.splitlines()
 
     data: dict[int, dict[str,Any]] = {}
-    cur_id = -1
-    for ln in raw:
+    
+    raw_iter = iter(raw)
+    for ln in raw_iter:
+        ln = ln.strip()
+
         m1 = _RE_L1.match(ln)
+        
         if m1:
             npu_id, name, ok, pwr, tmp = m1.groups()
             cur_id = int(npu_id)
+            
             d = data.setdefault(cur_id, {})
-            d.update(name=name, health=ok,
-                     power=float(pwr)*1000,
-                     temp=int(tmp))
-            continue
+            d.update(
+                name=name, health=ok,
+                power=float(pwr) * 1000,
+                temp=int(tmp),
+                procs=[]
+            )
+            
+            try:
+                ln_l2 = next(raw_iter).strip()
+            except StopIteration:
+                break 
 
-        m2 = _RE_L2.match(ln)
-        if m2 and cur_id >= 0:
-            bus, aic = m2.groups()
-            pair = re.findall(r'(\d+)\s*/\s*(\d+)', ln)[-1]
-            h_used, h_tot = map(int, pair)
-            d = data.setdefault(cur_id, {})
-            d.update(bus_id=bus,
-                     aicore=int(aic),
-                     hbm_used=h_used*1024*1024,
-                     hbm_total=h_tot*1024*1024)
+            m2 = _RE_L2.match(ln_l2)
+            
+            if m2:
+                bus, aic = m2.groups()
+                pair = re.findall(r'(\d+)\s*/\s*(\d+)', ln_l2)[-1]
+                h_used, h_tot = map(int, pair)
+                d.update(
+                    bus_id=bus,
+                    aicore=int(aic),
+                    hbm_used=h_used * 1024 * 1024,
+                    hbm_total=h_tot * 1024 * 1024
+                )
+
             continue
 
         mp = _RE_P.match(ln)
         if mp:
             npu_id, pid, mem = map(int, mp.groups())
             d = data.setdefault(npu_id, {})
-            d.setdefault("procs", []).append((pid, mem*1024*1024))
+            d.setdefault("procs", []).append((pid, mem * 1024 * 1024))
 
-    Util = namedtuple("UtilizationRates","npu mem bandwidth aicpu")
     for d in data.values():
         d.setdefault("power", NA); d.setdefault("temp", NA)
         d.setdefault("aicore", NA)
@@ -138,4 +157,3 @@ class _Mod(ModuleType):
     def __enter__(self): return self
     def __exit__(self,*exc): ...
 sys.modules[__name__].__class__ = _Mod
-
