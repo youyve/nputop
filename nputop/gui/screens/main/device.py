@@ -147,7 +147,7 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
                 device.name = device.name.replace('NVIDIA ', '', 1)
             if device.is_mig_device:
                 device.name = device.name.rpartition(' ')[-1]
-                if device.bar1_memory_percent is not NA:
+                if device.bar1_memory_percent != NA:
                     device.bar1_memory_percent = round(device.bar1_memory_percent)
                     if device.bar1_memory_percent >= 100:
                         device.bar1_memory_percent_string = 'MAX'
@@ -166,7 +166,7 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
                 )
                 device.mig_mode = device.mig_mode.replace('N/A', 'N/A ')
                 device.compute_mode = device.compute_mode.replace('Exclusive', 'E.')
-                if device.fan_speed is not NA and device.fan_speed >= 100:
+                if device.fan_speed != NA and device.fan_speed >= 100:
                     device.fan_speed_string = 'MAX'
 
         with self.snapshot_lock:

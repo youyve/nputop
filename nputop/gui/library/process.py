@@ -37,7 +37,7 @@ class NpuProcess(NpuProcessBase):
     def host_snapshot(self) -> Snapshot:
         host_snapshot = super().host_snapshot()
 
-        if host_snapshot.cpu_percent is NA:
+        if host_snapshot.cpu_percent == NA:
             host_snapshot.cpu_percent_string = NA
         elif host_snapshot.cpu_percent < 1000.0:
             host_snapshot.cpu_percent_string = f'{host_snapshot.cpu_percent:.1f}%'
@@ -46,7 +46,7 @@ class NpuProcess(NpuProcessBase):
         else:
             host_snapshot.cpu_percent_string = '9999+%'
 
-        if host_snapshot.memory_percent is NA:
+        if host_snapshot.memory_percent == NA:
             host_snapshot.memory_percent_string = NA
         else:
             host_snapshot.memory_percent_string = f'{host_snapshot.memory_percent:.1f}%'
@@ -57,7 +57,7 @@ class NpuProcess(NpuProcessBase):
         snapshot = super().as_snapshot(host_process_snapshot_cache=host_process_snapshot_cache)
 
         snapshot.type = snapshot.type.replace('C+G', 'X')
-        if snapshot.npu_memory_human is NA and (host.WINDOWS or host.WSL):
+        if snapshot.npu_memory_human == NA and (host.WINDOWS or host.WSL):
             snapshot.npu_memory_human = 'WDDM:N/A'
 
         snapshot.cpu_percent_string = snapshot.host.cpu_percent_string

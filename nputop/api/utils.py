@@ -205,7 +205,7 @@ class NaType(str):
         """  # pylint: disable=line-too-long
         if isinstance(other, (int, float)):
             return float(self) + other
-        if other is NA:
+        if other == NA:
             return float(self)
         return super().__add__(other)  # type: ignore[operator]
 
@@ -237,7 +237,7 @@ class NaType(str):
         """
         if isinstance(other, (int, float)):
             return float(self) - other
-        if other is NA:
+        if other == NA:
             return float(self)
         return NotImplemented
 
@@ -269,7 +269,7 @@ class NaType(str):
         """
         if isinstance(other, (int, float)):
             return float(self) * other
-        if other is NA:
+        if other == NA:
             return float(self)
         return NotImplemented
 
@@ -301,7 +301,7 @@ class NaType(str):
         """
         if isinstance(other, (int, float)):
             return float(self) / other
-        if other is NA:
+        if other == NA:
             return float(self)
         return NotImplemented
 
@@ -333,7 +333,7 @@ class NaType(str):
         """
         if isinstance(other, (int, float)):
             return float(self) // other
-        if other is NA:
+        if other == NA:
             return float(self)
         return NotImplemented
 
@@ -363,7 +363,7 @@ class NaType(str):
         """
         if isinstance(other, (int, float)):
             return float(self) % other
-        if other is NA:
+        if other == NA:
             return float(self)
         return NotImplemented
 

@@ -80,7 +80,7 @@ class TreeNode:  # pylint: disable=too-many-instance-attributes
                 except host.PsutilError:
                     cpu_percent = cpu_percent_string = NA
                 else:
-                    if cpu_percent is NA:
+                    if cpu_percent == NA:
                         cpu_percent_string = NA
                     elif cpu_percent < 1000.0:
                         cpu_percent_string = f'{cpu_percent:.1f}%'
@@ -94,7 +94,7 @@ class TreeNode:  # pylint: disable=too-many-instance-attributes
                 except host.PsutilError:
                     memory_percent = memory_percent_string = NA
                 else:
-                    if memory_percent is not NA:
+                    if memory_percent != NA:
                         memory_percent_string = f'{memory_percent:.1f}%'
                     else:
                         memory_percent_string = NA

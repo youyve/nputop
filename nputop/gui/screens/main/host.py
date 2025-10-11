@@ -117,7 +117,7 @@ class HostPanel(Displayable):  # pylint: disable=too-many-instance-attributes
         )(host.swap_memory, get_value=lambda sm: sm.percent)
 
         def percentage(x):
-            return f'{x:.1f}%' if x is not NA else NA
+            return f'{x:.1f}%' if x != NA else NA
 
         def enable_history(device):
             device.memory_percent = BufferedHistoryGraph(
@@ -190,10 +190,10 @@ class HostPanel(Displayable):  # pylint: disable=too-many-instance-attributes
             memory_used = device.snapshot.memory_used
             memory_total = device.snapshot.memory_total
             npu_utilization = device.snapshot.npu_utilization
-            if memory_used is not NA and memory_total is not NA:
+            if memory_used != NA and memory_total != NA:
                 total_memory_used += memory_used
                 total_memory_total += memory_total
-            if npu_utilization is not NA:
+            if npu_utilization != NA:
                 npu_utilizations.append(float(npu_utilization))
         if total_memory_total > 0:
             self.average_npu_memory_percent.add(100.0 * total_memory_used / total_memory_total)

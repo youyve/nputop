@@ -122,7 +122,7 @@ def ascendDeviceGetProcessInfo(i:int):
     return [ProcInfo(pid,mem) for pid,mem in _CACHE.get(id,{}).get("procs",[])]
 
 def nvmlCheckReturn(v:Any, t:type|tuple[type,...]|None=None)->bool:
-    return v is not NA and (isinstance(v,t) if t else True)
+    return v != NA and (isinstance(v,t) if t else True)
 
 def nvmlQuery(func:Callable|str,*a,default:Any=NA,**kw)->Any:
     try:
