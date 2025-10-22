@@ -35,8 +35,8 @@ _CACHE_TTL  = 0.8
 _cache_ts   = 0.0
 
 # --------- Regex ----------
-_RE_L1 = re.compile(r"^\|\s*(\d+)\s+(\S+).*?\|\s*(\S+)\s+\|\s*([\d.]+)\s+(\d+)")
-_RE_L2 = re.compile(r"^\|\s*[\d\s]+\|\s*([0-9A-Fa-f:.]+|NA)\s*\|\s*(\d+).*?\|$")
+_RE_L1 = re.compile(r"^\|\s*(\d+)\s+(\S+).*?\|\s*(\S+)\s+\|\s*([\d.]+|-)\s+(\d+)")
+_RE_L2 = re.compile(r"^\|\s*\d+\s+(\d*)\s*\|\s*([0-9A-Fa-f:.]+|NA)\s*\|\s*(\d+).*?\|$")
 _RE_P  = re.compile(r"^\|\s*(\d+)\s+\d+\s+\|\s+(\d+)\s+\|.*?\|\s+(\d+)")
 
 Util = namedtuple("UtilizationRates", ["npu", "mem", "bandwidth", "aicpu"])
@@ -64,10 +64,9 @@ def _update_cache(raw: str = None) -> None:
             npu_id, name, ok, pwr, tmp = m1.groups()
             cur_id = int(npu_id)
             
-            d = data.setdefault(cur_id, {})
-            d.update(
+            ln1_data = dict(
                 name=name, health=ok,
-                power=float(pwr) * 1000,
+                power=float(pwr) * 1000 if pwr != '-' else NA + " ",
                 temp=int(tmp),
                 procs=[]
             )
@@ -75,12 +74,20 @@ def _update_cache(raw: str = None) -> None:
             try:
                 ln_l2 = next(raw_iter).strip()
             except StopIteration:
+                d = data.setdefault(cur_id, {})
+                d.update(ln1_data)
                 break 
 
             m2 = _RE_L2.match(ln_l2)
             
             if m2:
-                bus, aic = m2.groups()
+                phy_id, bus, aic = m2.groups()
+
+                if phy_id:
+                    cur_id = int(phy_id)
+                d = data.setdefault(cur_id, {})
+                d.update(ln1_data)
+
                 pair = re.findall(r'(\d+)\s*/\s*(\d+)', ln_l2)[-1]
                 h_used, h_tot = map(int, pair)
                 d.update(
@@ -89,6 +96,9 @@ def _update_cache(raw: str = None) -> None:
                     hbm_used=h_used * 1024 * 1024,
                     hbm_total=h_tot * 1024 * 1024
                 )
+            else:
+                d = data.setdefault(cur_id, {})
+                d.update(ln1_data)
 
             continue
 
