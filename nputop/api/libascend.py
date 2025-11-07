@@ -21,6 +21,7 @@ from collections import namedtuple
 from types import ModuleType
 from typing import Any
 from collections.abc import Callable
+import platform
 
 # --------- 常量 ----------
 NA            : str  = "N/A"
@@ -33,16 +34,30 @@ _CACHE      : dict[int, dict[str,Any]] = {}   # 物理 id ↦ 数据
 _IDX        : list[int] = []                  # 逻辑 index ↦ 物理 id
 _CACHE_TTL  = 0.8
 _cache_ts   = 0.0
+_DRIVER_VERSION = None
+_CHIP_NAME = None
+_POWER_LIMIT = {
+    "310": 8,
+    "310B": 8,
+    "310P": 120,
+    "910": 310,
+    "910A": 310,
+    "910B": 310,
+    "910C": 310,
+}
 
 # --------- Regex ----------
 _RE_L1 = re.compile(r"^\|\s*(\d+)\s+(\S+).*?\|\s*(\S+)\s+\|\s*([\d.]+)\s+(\d+)")
 _RE_L2 = re.compile(r"^\|\s*[\d\s]+\|\s*([0-9A-Fa-f:.]+|NA)\s*\|\s*(\d+).*?\|$")
 _RE_P  = re.compile(r"^\|\s*(\d+)\s+\d+\s+\|\s+(\d+)\s+\|.*?\|\s+(\d+)")
+_RE_R = re.compile(r"^\|\s*(\S+)\s+([\d.rcRC]+)\s+Version:\s*([\d.rcRC]+)")
 
 Util = namedtuple("UtilizationRates", ["npu", "mem", "bandwidth", "aicpu"])
 
 def _update_cache(raw: str = None) -> None:
     global _cache_ts
+    global _DRIVER_VERSION
+    global _CHIP_NAME
     if time.time() - _cache_ts < _CACHE_TTL:
         return
 
@@ -55,6 +70,11 @@ def _update_cache(raw: str = None) -> None:
     data: dict[int, dict[str,Any]] = {}
     
     raw_iter = iter(raw)
+    next(raw_iter)
+    ln_l0 = next(raw_iter).strip()
+    if _DRIVER_VERSION is None:
+        m0 = _RE_R.match(ln_l0)
+        _,_DRIVER_VERSION,_ = m0.groups()
     for ln in raw_iter:
         ln = ln.strip()
 
@@ -62,6 +82,8 @@ def _update_cache(raw: str = None) -> None:
         
         if m1:
             npu_id, name, ok, pwr, tmp = m1.groups()
+            if _CHIP_NAME is None:
+                _CHIP_NAME = name
             cur_id = int(npu_id)
             
             d = data.setdefault(cur_id, {})
@@ -139,6 +161,45 @@ def ascendDeviceGetProcessInfo(i:int):
     id=_phys(i)
     if id is None: return []
     return [ProcInfo(pid,mem) for pid,mem in _CACHE.get(id,{}).get("procs",[])]
+
+def ascendSystemGetDriverVersion() -> str:
+    global _DRIVER_VERSION
+    if _DRIVER_VERSION is None:
+        return NA
+    else:
+        return _DRIVER_VERSION
+
+def ascendSystemGetCANNDriverVersion() -> str:
+    arch = platform.machine()
+    if arch == "x86_64":
+        arch_subdir = "x86_64-linux"
+    elif arch == "aarch64":
+        arch_subdir = "aarch64-linux"
+    else:
+        return NA
+    try:
+        result = subprocess.run(['cat', f'/usr/local/Ascend/ascend-toolkit/latest/{arch_subdir}/ascend_toolkit_install.info'], 
+                              capture_output=True, text=True, check=True)
+        output = result.stdout
+        
+        pattern = r'version\s*=\s*([\w\.+-]+)'
+        match = re.search(pattern, output)
+        
+        if match:
+            return match.group(1)
+        else:
+            return NA
+            
+    except Exception as e:
+        return NA
+    
+def ascendDeviceGetPowerLimit(i:int):
+    
+    global _CHIP_NAME
+    if _CHIP_NAME[:4] in _POWER_LIMIT:
+        return _POWER_LIMIT[_CHIP_NAME[:4]]
+    else:
+        return NA
 
 def nvmlCheckReturn(v:Any, t:type|tuple[type,...]|None=None)->bool:
     return v != NA and (isinstance(v,t) if t else True)
