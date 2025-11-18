@@ -35,7 +35,6 @@ _IDX        : list[int] = []                  # 逻辑 index ↦ 物理 id
 _CACHE_TTL  = 0.8
 _cache_ts   = 0.0
 _DRIVER_VERSION = None
-_CHIP_NAME = None
 _POWER_LIMIT = {
     "310": None,
     "310B": None,
@@ -60,7 +59,6 @@ Util = namedtuple("UtilizationRates", ["npu", "mem", "bandwidth", "aicpu"])
 def _update_cache(raw: str = None) -> None:
     global _cache_ts
     global _DRIVER_VERSION
-    global _CHIP_NAME
     if time.time() - _cache_ts < _CACHE_TTL:
         return
 
@@ -86,8 +84,6 @@ def _update_cache(raw: str = None) -> None:
         
         if m1:
             npu_id, name, ok, pwr, tmp = m1.groups()
-            if _CHIP_NAME is None:
-                _CHIP_NAME = name
             cur_id = int(npu_id)
             
             d = data.setdefault(cur_id, {})
@@ -168,42 +164,28 @@ def ascendDeviceGetProcessInfo(i:int):
 
 def ascendSystemGetDriverVersion() -> str:
     global _DRIVER_VERSION
-    if _DRIVER_VERSION is None:
-        return NA
-    else:
-        return _DRIVER_VERSION
+    return _DRIVER_VERSION or NA
 
-def ascendSystemGetCANNDriverVersion() -> str:
+def ascendSystemGetCANNVersion() -> str:
     arch = platform.machine()
-    if arch == "x86_64":
-        arch_subdir = "x86_64-linux"
-    elif arch == "aarch64":
-        arch_subdir = "aarch64-linux"
-    else:
-        return NA
+    arch_subdir_map = {"x86_64": "x86_64-linux", "aarch64": "aarch64-linux"}
+    arch_subdir = arch_subdir_map.get(arch)
     try:
         result = subprocess.run(['cat', f'/usr/local/Ascend/ascend-toolkit/latest/{arch_subdir}/ascend_toolkit_install.info'], 
                               capture_output=True, text=True, check=True)
         output = result.stdout
         
-        pattern = r'version\s*=\s*([\w\.+-]+)'
-        match = re.search(pattern, output)
-        
-        if match:
-            return match.group(1)
-        else:
-            return NA
+        match = re.search(r'version\s*=\s*([\w.+-]+)', output)
+        return match.group(1) if match else NA
             
-    except Exception as e:
+    except (FileNotFoundError, PermissionError):
         return NA
     
 def ascendDeviceGetPowerLimit(i:int):
-    
-    global _CHIP_NAME
-    if _CHIP_NAME in _POWER_LIMIT:
-        return _POWER_LIMIT[_CHIP_NAME]
-    else:
-        return NA
+    id=_phys(i)
+    if id is None: return NA
+    chip_name = _CACHE.get(id,{}).get("name")
+    return _POWER_LIMIT.get(chip_name, NA)
 
 def nvmlCheckReturn(v:Any, t:type|tuple[type,...]|None=None)->bool:
     return v != NA and (isinstance(v,t) if t else True)

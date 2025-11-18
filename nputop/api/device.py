@@ -133,7 +133,7 @@ class Device:  # pylint: disable=too-many-instance-attributes
 
     @staticmethod
     def cuda_driver_version() -> str | NaType:
-        return libnvml.nvmlQuery("ascendSystemGetCANNDriverVersion", default=NA)
+        return libnvml.nvmlQuery("ascendSystemGetCANNVersion", default=NA)
     
     max_cuda_version = driver_version
 
