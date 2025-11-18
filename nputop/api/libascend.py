@@ -37,13 +37,16 @@ _cache_ts   = 0.0
 _DRIVER_VERSION = None
 _CHIP_NAME = None
 _POWER_LIMIT = {
-    "310": 8,
-    "310B": 8,
-    "310P": 120,
-    "910": 310,
+    "310": None,
+    "310B": None,
+    "310P1": 90,
+    "310P3": 72,
     "910A": 310,
-    "910B": 310,
-    "910C": 310,
+    "910B": 265,
+    "910B1": 430,
+    "910B2": 420,
+    "910B3": 350,
+    "910C": 350,
 }
 
 # --------- Regex ----------
@@ -74,7 +77,8 @@ def _update_cache(raw: str = None) -> None:
     ln_l0 = next(raw_iter).strip()
     if _DRIVER_VERSION is None:
         m0 = _RE_R.match(ln_l0)
-        _,_DRIVER_VERSION,_ = m0.groups()
+        if m0:
+            _,_DRIVER_VERSION,_ = m0.groups()
     for ln in raw_iter:
         ln = ln.strip()
 
@@ -196,8 +200,8 @@ def ascendSystemGetCANNDriverVersion() -> str:
 def ascendDeviceGetPowerLimit(i:int):
     
     global _CHIP_NAME
-    if _CHIP_NAME[:4] in _POWER_LIMIT:
-        return _POWER_LIMIT[_CHIP_NAME[:4]]
+    if _CHIP_NAME in _POWER_LIMIT:
+        return _POWER_LIMIT[_CHIP_NAME]
     else:
         return NA
 
