@@ -131,7 +131,10 @@ class Device:  # pylint: disable=too-many-instance-attributes
     def driver_version() -> str | NaType:
         return libnvml.nvmlQuery("ascendSystemGetDriverVersion", default=NA)
 
-    cuda_driver_version = driver_version
+    @staticmethod
+    def cuda_driver_version() -> str | NaType:
+        return libnvml.nvmlQuery("ascendSystemGetCANNVersion", default=NA)
+    
     max_cuda_version = driver_version
 
     # ------------------------------------------------------------
@@ -182,11 +185,13 @@ class Device:  # pylint: disable=too-many-instance-attributes
         return libnvml.nvmlQuery("ascendDeviceGetPowerUsage", self.index)
 
     def power_limit(self) -> int | NaType:
-        return NA
+        return libnvml.nvmlQuery("ascendDeviceGetPowerLimit", self.index)
 
     def power_status(self) -> str | NaType:
         pu = self.power_usage()
-        return f"{pu/1000 if isinstance(pu, (int,float)) else pu}W / N/A"
+        li = self.power_limit()
+        li = f"{float(li)}W" if isinstance(li, int) else "N/A"
+        return f"{pu/1000 if isinstance(pu, (int,float)) else pu}W / {li}"
 
     # ------------------------------------------------------------
     # 内存

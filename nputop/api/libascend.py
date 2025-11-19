@@ -21,6 +21,7 @@ from collections import namedtuple
 from types import ModuleType
 from typing import Any
 from collections.abc import Callable
+import platform
 
 # --------- 常量 ----------
 NA            : str  = "N/A"
@@ -33,17 +34,31 @@ _CACHE      : dict[int, dict[str,Any]] = {}   # 物理 id ↦ 数据
 _IDX        : list[int] = []                  # 逻辑 index ↦ 物理 id
 _CACHE_TTL  = 0.8
 _cache_ts   = 0.0
+_DRIVER_VERSION = None
+_POWER_LIMIT = {
+    "310": None,
+    "310B": None,
+    "310P1": 90,
+    "310P3": 72,
+    "910A": 310,
+    "910B": 265,
+    "910B1": 430,
+    "910B2": 420,
+    "910B3": 350,
+    "910C": 350,
+}
 _npu_chip_phy : dict[tuple[int, int], int] = {} # (npu id, chip_id) ↦ phy id
-
 # --------- Regex ----------
 _RE_L1 = re.compile(r"^\|\s*(\d+)\s+(\S+).*?\|\s*(\S+)\s+\|\s*([\d.]+|-)\s+(\d+)")
 _RE_L2 = re.compile(r"^\|\s*(\d+)\s+(\d*)\s*\|\s*([0-9A-Fa-f:.]+|NA)\s*\|\s*(\d+).*?\|$")
 _RE_P  = re.compile(r"^\|\s*(\d+)\s+(\d+)\s+\|\s+(\d+)\s+\|.*?\|\s+(\d+)")
+_RE_R = re.compile(r"^\|\s*(\S+)\s+([\d.rcRC]+)\s+Version:\s*([\d.rcRC]+)")
 
 Util = namedtuple("UtilizationRates", ["npu", "mem", "bandwidth", "aicpu"])
 
 def _update_cache(raw: str = None) -> None:
     global _cache_ts
+    global _DRIVER_VERSION
     if time.time() - _cache_ts < _CACHE_TTL:
         return
 
@@ -56,6 +71,12 @@ def _update_cache(raw: str = None) -> None:
     data: dict[int, dict[str,Any]] = {}
     
     raw_iter = iter(raw)
+    next(raw_iter)
+    ln_l0 = next(raw_iter).strip()
+    if _DRIVER_VERSION is None:
+        m0 = _RE_R.match(ln_l0)
+        if m0:
+            _,_DRIVER_VERSION,_ = m0.groups()
     for ln in raw_iter:
         ln = ln.strip()
 
@@ -158,6 +179,31 @@ def ascendDeviceGetProcessInfo(i:int):
     id=_phys(i)
     if id is None: return []
     return [ProcInfo(pid,mem) for pid,mem in _CACHE.get(id,{}).get("procs",[])]
+
+def ascendSystemGetDriverVersion() -> str:
+    global _DRIVER_VERSION
+    return _DRIVER_VERSION or NA
+
+def ascendSystemGetCANNVersion() -> str:
+    arch = platform.machine()
+    arch_subdir_map = {"x86_64": "x86_64-linux", "aarch64": "aarch64-linux"}
+    arch_subdir = arch_subdir_map.get(arch)
+    try:
+        result = subprocess.run(['cat', f'/usr/local/Ascend/ascend-toolkit/latest/{arch_subdir}/ascend_toolkit_install.info'], 
+                              capture_output=True, text=True, check=True)
+        output = result.stdout
+        
+        match = re.search(r'version\s*=\s*([\w.+-]+)', output)
+        return match.group(1) if match else NA
+            
+    except (FileNotFoundError, PermissionError):
+        return NA
+    
+def ascendDeviceGetPowerLimit(i:int):
+    id=_phys(i)
+    if id is None: return NA
+    chip_name = _CACHE.get(id,{}).get("name")
+    return _POWER_LIMIT.get(chip_name, NA)
 
 def nvmlCheckReturn(v:Any, t:type|tuple[type,...]|None=None)->bool:
     return v != NA and (isinstance(v,t) if t else True)

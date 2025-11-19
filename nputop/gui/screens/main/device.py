@@ -69,13 +69,13 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
 
         self.formats_compact = [
             '│ {physical_index:>3} {fan_speed_string:>3} {temperature_string:>4} '
-            '{performance_state:>3} {power_status:>12} '
+            ' {power_status:>15} '
             '│ {memory_usage:>20} │ {npu_utilization_string:>7}  {compute_mode:>11} │',
         ]
         self.formats_full = [
             '│ {physical_index:>3}  {name:<18}  {persistence_mode:<4} '
             '│ {bus_id:<16} {display_active:>3} │ {total_volatile_uncorrected_ecc_errors:>20} │',
-            '│ {fan_speed_string:>3}  {temperature_string:>4}  {performance_state:>4}  {power_status:>12} '
+            '│ {fan_speed_string:>3}  {temperature_string:>4}    {power_status:>16} '
             '│ {memory_usage:>20} │ {npu_utilization_string:>7}  {compute_mode:>11} │',
         ]
 
@@ -86,7 +86,6 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
 
         if host.WINDOWS:
             self.formats_full[0] = self.formats_full[0].replace(
-                'persistence_mode',
                 'current_driver_model',
             )
 
@@ -187,7 +186,7 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
         version_infos = [
             'nputop {}'.format(__version__.partition('+')[0]),
             f'Driver Version: {self.driver_version}',
-            f'CUDA Driver Version: {self.cuda_driver_version}',
+            f'CANN Version: {self.cuda_driver_version}',
         ]
         if sum(len(v) for v in version_infos) % 2 == 0:
             version_infos[0] += ' '
@@ -203,13 +202,13 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
             )
             if compact:
                 header.append(
-                    '│ NPU Fan Temp Perf Pwr:Usg/Cap │         Memory-Usage │ NPU-Util  Compute M. │',
+                    '│ NPU Fan Temp      Pwr:Usg/Cap │         Memory-Usage │ NPU-Util  Compute M. │',
                 )
             else:
                 header.extend(
                     (
                         '│ NPU  Name        Persistence-M│ Bus-Id        Disp.A │ Volatile Uncorr. ECC │',
-                        '│ Fan  Temp  Perf  Pwr:Usage/Cap│         Memory-Usage │ NPU-Util  Compute M. │',
+                        '│ Fan  Temp        Pwr:Usage/Cap│         Memory-Usage │ NPU-Util  Compute M. │',
                     ),
                 )
                 if host.WINDOWS:
