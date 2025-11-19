@@ -190,7 +190,8 @@ class Device:  # pylint: disable=too-many-instance-attributes
     def power_status(self) -> str | NaType:
         pu = self.power_usage()
         li = self.power_limit()
-        return f"{pu/1000 if isinstance(pu, (int,float)) else pu}W / {float(li) if isinstance(li, int) else "N/A"}W"
+        li = f"{float(li)}W" if isinstance(li, int) else "N/A"
+        return f"{pu/1000 if isinstance(pu, (int,float)) else pu}W / {li}"
 
     # ------------------------------------------------------------
     # 内存
