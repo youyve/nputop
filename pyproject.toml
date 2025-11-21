@@ -206,3 +206,5 @@ inline-quotes = "single"
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
+[tool.setuptools]
+license-files = []
