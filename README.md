@@ -52,6 +52,7 @@
 * Ascend NPU Firmware & Drivers([link](https://www.hiascend.com/en/hardware/firmware-drivers/community))
 
 If you're using Conda, we recommend installing nputop via conda-forge:
+
 ```bash
 # Option 1: without changing default config
 conda install -c conda-forge nputop
@@ -63,7 +64,9 @@ conda config --set channel_priority strict
 # Then install
 conda install nputop
 ```
+
 Or, if you prefer to use pip, you can install it directly from PyPI:
+
 ```bash
 pip install ascend-nputop
 ```
@@ -84,6 +87,15 @@ Launch `nputop` directly from your terminal:
 
 ```bash
 nputop
+```
+
+**Tip:** You can launch via [`uvx`](https://docs.astral.sh/uv/guides/tools) or [`pipx`](https://pypa.github.io/pipx) instead, which handles environment setup and isolation automatically. Add this alias to your shell profile:
+
+```bash
+# uvx
+echo 'alias nputop="uvx --from ascend-nputop nputop"' >> ~/.bashrc
+# pipx
+echo 'alias nputop="pipx run --spec ascend-nputop nputop"' >> ~/.bashrc
 ```
 
 Set environment variables (`ASCEND_RT_VISIBLE_DEVICES`) to restrict visible NPUs.

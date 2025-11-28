@@ -75,6 +75,15 @@ pip install -e .
 nputop
 ```
 
+**贴士：** 你可以通过 [`uvx`](https://docs.astral.sh/uv/guides/tools) 或 [`pipx`](https://pypa.github.io/pipx) 启动，它会自动处理环境设置和隔离。可以将以下别名添加到你的 shell 配置文件中：
+
+```bash
+# uvx
+echo 'alias nputop="uvx --from ascend-nputop nputop"' >> ~/.bashrc
+# pipx
+echo 'alias nputop="pipx run --spec ascend-nputop nputop"' >> ~/.bashrc
+```
+
 设置环境变量（`ASCEND_RT_VISIBLE_DEVICES`）以限制可见的 NPU。
 
 ---
