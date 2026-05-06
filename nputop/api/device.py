@@ -196,9 +196,28 @@ class Device:  # pylint: disable=too-many-instance-attributes
     # ------------------------------------------------------------
     # 内存
     # ------------------------------------------------------------
+    @staticmethod
+    def _normalize_memory_info(info: Any) -> MemoryInfo:
+        if isinstance(info, (tuple, list)) and len(info) >= 3:
+            total, free, used = info[:3]
+        else:
+            total = getattr(info, "total", NA)
+            free = getattr(info, "free", NA)
+            used = getattr(info, "used", NA)
+
+        if not all(isinstance(value, int) for value in (total, free, used)):
+            return MemoryInfo(total=NA, free=NA, used=NA)
+
+        return MemoryInfo(total=total, free=free, used=used)
+
     @memoize_when_activated
     def memory_info(self) -> MemoryInfo:
-        return libnvml.nvmlQuery("ascendDeviceGetMemoryInfo", self.index)
+        info = libnvml.nvmlQuery(
+            "ascendDeviceGetMemoryInfo",
+            self.index,
+            default=MemoryInfo(total=NA, free=NA, used=NA),
+        )
+        return self._normalize_memory_info(info)
 
     def memory_total(self) -> int | NaType:
         return self.memory_info().total
@@ -222,7 +241,7 @@ class Device:  # pylint: disable=too-many-instance-attributes
 
     def memory_percent(self) -> float | NaType:
         info = self.memory_info()
-        if isinstance(info.total, int) and info.total:
+        if isinstance(info.total, int) and isinstance(info.used, int) and info.total:
             return round(100.0 * info.used / info.total, 1)
         return NA
 

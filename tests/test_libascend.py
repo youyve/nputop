@@ -1,5 +1,3 @@
-import time
-
 import pytest
 
 from nputop.api import libascend
@@ -270,11 +268,16 @@ TEST_CASES = [
 ]
 
 
-@pytest.mark.parametrize("raw,expected_cache", TEST_CASES)
-def test_npusmi_parse(raw, expected_cache):
+def reset_libascend_cache():
     libascend._CACHE.clear()
     libascend._IDX.clear()
-    time.sleep(1)
+    libascend._npu_chip_phy.clear()
+    libascend._cache_ts = 0.0
+
+
+@pytest.mark.parametrize("raw,expected_cache", TEST_CASES)
+def test_npusmi_parse(raw, expected_cache):
+    reset_libascend_cache()
 
     libascend._update_cache(raw)
 
@@ -285,3 +288,17 @@ def test_npusmi_parse(raw, expected_cache):
         cached_val = libascend._CACHE[key]
         for field, value in expected_val.items():
             assert cached_val[field] == value
+
+
+def test_npusmi_parse_ignores_transient_unknown_process():
+    raw = TEST_CASES[0][0].replace(
+        "| 0       0                 | 124528",
+        "| 7       0                 | 124528",
+    )
+    reset_libascend_cache()
+
+    libascend._update_cache(raw)
+
+    assert libascend._IDX == [0, 1]
+    assert libascend._CACHE[0]["procs"] == []
+    assert libascend._CACHE[1]["procs"] == []

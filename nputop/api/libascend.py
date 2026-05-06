@@ -16,7 +16,7 @@
 # limitations under the License.
 
 from __future__ import annotations
-import subprocess, re, time, sys
+import subprocess, re, time, sys, threading
 from collections import namedtuple
 from types import ModuleType
 from typing import Any
@@ -34,6 +34,7 @@ _CACHE      : dict[int, dict[str,Any]] = {}   # 物理 id ↦ 数据
 _IDX        : list[int] = []                  # 逻辑 index ↦ 物理 id
 _CACHE_TTL  = 0.8
 _cache_ts   = 0.0
+_CACHE_LOCK = threading.RLock()
 _DRIVER_VERSION = None
 _POWER_LIMIT = {
     "310": None,
@@ -62,94 +63,105 @@ def _update_cache(raw: str = None) -> None:
     if time.time() - _cache_ts < _CACHE_TTL:
         return
 
-    if not raw:
-        raw = subprocess.run(
-            ["npu-smi","info"], text=True, capture_output=True, timeout=3
-        ).stdout
-    raw = raw.splitlines()
+    with _CACHE_LOCK:
+        if time.time() - _cache_ts < _CACHE_TTL:
+            return
 
-    data: dict[int, dict[str,Any]] = {}
-    
-    raw_iter = iter(raw)
-    next(raw_iter)
-    ln_l0 = next(raw_iter).strip()
-    if _DRIVER_VERSION is None:
-        m0 = _RE_R.match(ln_l0)
-        if m0:
-            _,_DRIVER_VERSION,_ = m0.groups()
-    for ln in raw_iter:
-        ln = ln.strip()
+        if not raw:
+            raw = subprocess.run(
+                ["npu-smi","info"], text=True, capture_output=True, timeout=3
+            ).stdout
+        raw = raw.splitlines()
 
-        m1 = _RE_L1.match(ln)
+        data: dict[int, dict[str,Any]] = {}
+        chip_phy: dict[tuple[int, int], int] = {}
         
-        if m1:
-            npu_id, name, ok, pwr, tmp = m1.groups()
-            cur_id = int(npu_id)
-            
-            ln1_data = dict(
-                name=name, health=ok,
-                power=float(pwr) * 1000 if (pwr != '-' and pwr != "NA") else NA + " ",
-                temp=int(tmp),
-                procs=[],
-                npu_id=cur_id,
-                chip_id=0,
-            )
-            
-            try:
-                ln_l2 = next(raw_iter).strip()
-            except StopIteration:
-                d = data.setdefault(cur_id, {})
-                d.update(ln1_data)
-                _npu_chip_phy[(d['npu_id'], d['chip_id'])] = cur_id
-                break 
+        raw_iter = iter(raw)
+        next(raw_iter)
+        ln_l0 = next(raw_iter).strip()
+        if _DRIVER_VERSION is None:
+            m0 = _RE_R.match(ln_l0)
+            if m0:
+                _,_DRIVER_VERSION,_ = m0.groups()
+        for ln in raw_iter:
+            ln = ln.strip()
 
-            m2 = _RE_L2.match(ln_l2)
+            m1 = _RE_L1.match(ln)
             
-            if m2:
-                chip_id, phy_id, bus, aic = m2.groups()
-                chip_id_kwargs = {'chip_id': int(chip_id)} if chip_id else {}
+            if m1:
+                npu_id, name, ok, pwr, tmp = m1.groups()
+                cur_id = int(npu_id)
 
-                if phy_id:
-                    cur_id = int(phy_id)
-                d = data.setdefault(cur_id, {})
-                d.update(ln1_data)
-
-                pair = re.findall(r'(\d+)\s*/\s*(\d+)', ln_l2)[-1]
-                h_used, h_tot = map(int, pair)
-                d.update(
-                    bus_id=bus,
-                    aicore=int(aic),
-                    hbm_used=h_used * 1024 * 1024,
-                    hbm_total=h_tot * 1024 * 1024,
-                    **chip_id_kwargs,
+                ln1_data = dict(
+                    name=name, health=ok,
+                    power=float(pwr) * 1000 if (pwr != '-' and pwr != "NA") else NA + " ",
+                    temp=int(tmp),
+                    procs=[],
+                    npu_id=cur_id,
+                    chip_id=0,
                 )
-                _npu_chip_phy[(d['npu_id'], d['chip_id'])] = cur_id
-            else:
-                d = data.setdefault(cur_id, {})
-                d.update(ln1_data)
-                _npu_chip_phy[(d['npu_id'], d['chip_id'])] = cur_id
 
-            continue
+                try:
+                    ln_l2 = next(raw_iter).strip()
+                except StopIteration:
+                    d = data.setdefault(cur_id, {})
+                    d.update(ln1_data)
+                    chip_phy[(d['npu_id'], d['chip_id'])] = cur_id
+                    break
 
-        mp = _RE_P.match(ln)
-        if mp:
-            npu_id, chip_id, pid, mem = map(int, mp.groups())
-            assert (npu_id, chip_id) in _npu_chip_phy, f"Process found for unknown NPU {npu_id} Chip {chip_id}"
-            d = data.setdefault(_npu_chip_phy[(npu_id, chip_id)], {})
-            d.setdefault("procs", []).append((pid, mem * 1024 * 1024))
+                m2 = _RE_L2.match(ln_l2)
 
-    for d in data.values():
-        d.setdefault("power", NA); d.setdefault("temp", NA)
-        d.setdefault("aicore", NA)
-        d.setdefault("hbm_used", 0); d.setdefault("hbm_total", 0)
-        d.setdefault("procs", [])
-        mem_pct = (round(100*d["hbm_used"]/d["hbm_total"],1)
-                   if d["hbm_total"] else NA)
-        d["util"] = Util(d["aicore"], mem_pct, NA, NA)
+                if m2:
+                    chip_id, phy_id, bus, aic = m2.groups()
+                    chip_id_kwargs = {'chip_id': int(chip_id)} if chip_id else {}
 
-    _CACHE.clear(); _CACHE.update(data)
-    _IDX.clear();   _IDX.extend(sorted(_CACHE.keys()))
-    _cache_ts = time.time()
+                    if phy_id:
+                        cur_id = int(phy_id)
+                    d = data.setdefault(cur_id, {})
+                    d.update(ln1_data)
+
+                    d.update(
+                        bus_id=bus,
+                        aicore=int(aic),
+                        **chip_id_kwargs,
+                    )
+                    pairs = re.findall(r'(\d+)\s*/\s*(\d+)', ln_l2)
+                    if pairs:
+                        h_used, h_tot = map(int, pairs[-1])
+                        d.update(
+                            hbm_used=h_used * 1024 * 1024,
+                            hbm_total=h_tot * 1024 * 1024,
+                        )
+                    chip_phy[(d['npu_id'], d['chip_id'])] = cur_id
+                else:
+                    d = data.setdefault(cur_id, {})
+                    d.update(ln1_data)
+                    chip_phy[(d['npu_id'], d['chip_id'])] = cur_id
+
+                continue
+
+            mp = _RE_P.match(ln)
+            if mp:
+                npu_id, chip_id, pid, mem = map(int, mp.groups())
+                phy_id = chip_phy.get((npu_id, chip_id))
+                if phy_id is None:
+                    continue
+                d = data.setdefault(phy_id, {})
+                d.setdefault("procs", []).append((pid, mem * 1024 * 1024))
+
+        for d in data.values():
+            d.setdefault("power", NA); d.setdefault("temp", NA)
+            d.setdefault("aicore", NA)
+            d.setdefault("hbm_used", 0); d.setdefault("hbm_total", 0)
+            d.setdefault("procs", [])
+            mem_pct = (round(100*d["hbm_used"]/d["hbm_total"],1)
+                       if d["hbm_total"] else NA)
+            d["util"] = Util(d["aicore"], mem_pct, NA, NA)
+
+        _CACHE.clear(); _CACHE.update(data)
+        _IDX.clear();   _IDX.extend(sorted(_CACHE.keys()))
+        _npu_chip_phy.clear(); _npu_chip_phy.update(chip_phy)
+        _cache_ts = time.time()
 
 def _phys(idx: int) -> int|None:
     _update_cache()
