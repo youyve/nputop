@@ -204,7 +204,7 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
                 header.extend(
                     (
                         '│      NPU Name AICORE PCIe     │   Bus-Id / HBM MHz   │ Volatile Uncorr. ECC │',
-                        '│     Fan Temp Power HBM T/B    │     Memory-Usage     │   NPU CPU DVPP D/E   │',
+                        '│     Fan Temp Power HBM T/B    │     Memory-Usage     │ NPU% CPU% DVPP D/E   │',
                     ),
                 )
                 if self.support_mig:

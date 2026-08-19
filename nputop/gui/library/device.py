@@ -143,61 +143,60 @@ class Device(DeviceBase):
         return self.max_clock_infos().sm
 
     @staticmethod
-    def _metric(value, suffix=''):
-        return f'{value}{suffix}' if value != NA else NA
+    def _token(value):
+        return '--' if value == NA else str(value)
+
+    @classmethod
+    def _rate_token(cls, value):
+        if value == NA:
+            return '--'
+        value = round(float(value))
+        return 'MAX' if value >= 100 else f'{value}%'
 
     @staticmethod
     def _short_rate(value):
         if value == NA:
-            return NA
-        value = f'{value / (1024 * 1000):.1f}'
-        return value[:-2] if value.endswith('.0') else value
+            return '--'
+        return str(round(value / (1024 * 1000)))
 
     def dcmi_aicore_pcie_summary(self):
-        name = cut_string(self.name(), maxlen=10, padstr='..', align='right')
-        current = self._metric(self.sm_clock())
-        maximum = self._metric(self.max_sm_clock())
+        name = cut_string(self.name(), maxlen=7, padstr='..', align='left')
+        current = self._token(self.sm_clock())
+        maximum = self._token(self.max_sm_clock())
         tx = self._short_rate(self.pcie_tx_throughput())
         rx = self._short_rate(self.pcie_rx_throughput())
-        pcie = f'{tx}/{rx}G' if tx != NA and rx != NA else f'{tx}/{rx}'
-        return cut_string(
-            f'{self.physical_index} {name} A{current}/{maximum} P{pcie}',
-            29,
-            padstr='..',
-        )
+        return f'{self.physical_index:>2} {name:<7} A{current:>3}/{maximum:>4} P{tx:>2}/{rx:>2}G'.ljust(29)
 
     def dcmi_bus_hbm_summary(self):
         bus_id = self.bus_id()
         if bus_id != NA and len(bus_id) > 10 and ':' in bus_id:
             bus_id = bus_id.split(':', 1)[1]
-        frequency = self._metric(self.memory_clock())
-        return cut_string(f'{bus_id} H{frequency}', 20, padstr='..')
+        frequency = self._token(self.memory_clock())
+        return f'{bus_id:>7} H{frequency:>4}MHz'.rjust(20)
 
     def dcmi_power_hbm_summary(self):
-        fan = self.fan_speed_string()
-        temperature = self.temperature_string()
+        fan = self._token(self.fan_speed_string())
+        temperature = self._token(self.temperature_string())
         power_usage = self.power_usage()
         power_limit = self.power_limit()
         if isinstance(power_usage, int):
-            power = f'P{power_usage / 1000:.0f}W'
-            if isinstance(power_limit, int):
-                power += f'/{power_limit:.0f}W'
+            usage = str(round(power_usage / 1000))
+            limit = str(round(power_limit)) if isinstance(power_limit, int) else '--'
         else:
-            power = 'P' + NA
-        hbm_temperature = self._metric(self.hbm_temperature())
-        hbm_bandwidth = self._metric(self.hbm_bandwidth())
-        return cut_string(
-            f'{fan} {temperature} {power} H{hbm_temperature}/B{hbm_bandwidth}',
-            29,
-            padstr='..',
-        )
+            usage = limit = '--'
+        hbm_temperature = self._token(self.hbm_temperature())
+        hbm_bandwidth = self._token(self.hbm_bandwidth())
+        return (
+            f'{fan:>3} T{temperature:>3} P{usage:>3}/{limit:<3} '
+            f'H{hbm_temperature:>2}/B{hbm_bandwidth:>2}'
+        ).ljust(29)
 
     def dcmi_npu_aux_summary(self):
-        npu = self._metric(self.npu_utilization(), '%')
-        aicpu = self._metric(self.aicpu_utilization(), '%')
-        decoder = self._metric(self.decoder_utilization())
-        encoder = self._metric(self.encoder_utilization())
-        return cut_string(f'N{npu} C{aicpu} D{decoder}/E{encoder}', 20, padstr='..')
+        npu = self._rate_token(self.npu_utilization())
+        aicpu = self._rate_token(self.aicpu_utilization())
+        decoder = self._rate_token(self.decoder_utilization()).replace('%', '')
+        encoder = self._rate_token(self.encoder_utilization()).replace('%', '')
+        return f'N{npu:>3} C{aicpu:>3} D{decoder:>2}/E{encoder:>2}'.ljust(20)
 
     def memory_loading_intensity(self):
         return self.loading_intensity_of(self.memory_percent(), type='memory')

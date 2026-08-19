@@ -205,10 +205,10 @@ def test_libascend_uses_dcmi_backend_and_keeps_compat_types(monkeypatch):
     assert gui_snapshot.hbm_bandwidth == 7
     assert gui_snapshot.memory_bandwidth_utilization == 7
     assert gui_snapshot.aicpu_utilization == 7
-    assert gui_snapshot.dcmi_aicore_pcie_summary == '0 Fake910 A800/1800 P6/15G'
-    assert gui_snapshot.dcmi_bus_hbm_summary == '20:00.0 H1600'
-    assert gui_snapshot.dcmi_power_hbm_summary == '50% 42 P123W H42/B7'
-    assert gui_snapshot.dcmi_npu_aux_summary == 'N63% C7% D12/E34'
+    assert gui_snapshot.dcmi_aicore_pcie_summary == ' 0 Fake910 A800/1800 P 6/15G '
+    assert gui_snapshot.dcmi_bus_hbm_summary == '    20:00.0 H1600MHz'
+    assert gui_snapshot.dcmi_power_hbm_summary == '50% T 42 P123/--  H42/B 7    '
+    assert gui_snapshot.dcmi_npu_aux_summary == 'N63% C 7% D12/E34   '
 
     class Root:
         width = 79
