@@ -223,6 +223,29 @@ def test_libascend_uses_dcmi_backend_and_keeps_compat_types(monkeypatch):
     assert full_panel.height == 10
     assert all(len(line) == 79 for line in full_panel.frame_lines())
 
+    full_headers = full_panel.header_lines(compact=False)[3:5]
+    assert all(len(line) == 79 for line in full_headers)
+
+    first_columns = [line.split('│')[1][1:-1] for line in full_headers]
+    second_columns = [line.split('│')[2][1:-1] for line in full_headers]
+    third_columns = [line.split('│')[3][1:-1] for line in full_headers]
+
+    assert first_columns[0].index('AICORE') == 11
+    assert first_columns[0].index('PCIe') == 21
+    assert first_columns[1].index('Fan') == 0
+    assert first_columns[1].index('Temp') == 4
+    assert first_columns[1].index('Power') == 9
+    assert first_columns[1].index('HBM T/B') == 18
+
+    assert second_columns[0].index('Bus-Id') == 4
+    assert second_columns[0].index('HBM') == 12
+    assert second_columns[0].index('MHz') == 17
+    assert second_columns[1] == 'Memory-Usage'.rjust(20)
+
+    assert third_columns[1].index('NPU%') == 0
+    assert third_columns[1].index('CPU%') == 5
+    assert third_columns[1].index('DVPP') == 10
+
     libascend._reset_dcmi_backend()
 
 

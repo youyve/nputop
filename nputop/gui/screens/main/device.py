@@ -201,14 +201,42 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
                     '│ NPU Fan Temp      Pwr:Usg/Cap │         Memory-Usage │ NPU-Util  Compute M. │',
                 )
             else:
-                header.extend(
-                    (
-                        '│      NPU Name AICORE PCIe     │   Bus-Id / HBM MHz   │ Volatile Uncorr. ECC │',
-                        '│     Fan Temp Power HBM T/B    │     Memory-Usage     │ NPU% CPU% DVPP D/E   │',
+                first_line = '│ {} │ {} │ {} │'.format(
+                    self._header_field(
+                        29,
+                        (0, 'NPU'),
+                        (4, 'Name'),
+                        (11, 'AICORE'),
+                        (21, 'PCIe'),
                     ),
+                    self._header_field(
+                        20,
+                        (4, 'Bus-Id'),
+                        (11, '/'),
+                        (12, 'HBM'),
+                        (17, 'MHz'),
+                    ),
+                    'Volatile Uncorr. ECC',
+                )
+                second_line = '│ {} │ {} │ {} │'.format(
+                    self._header_field(
+                        29,
+                        (0, 'Fan'),
+                        (4, 'Temp'),
+                        (9, 'Power'),
+                        (18, 'HBM T/B'),
+                    ),
+                    'Memory-Usage'.rjust(20),
+                    'NPU% CPU% DVPP D/E'.ljust(20),
+                )
+                header.extend(
+                    (first_line, second_line),
                 )
                 if self.support_mig:
-                    header[-2] = header[-2].replace('Volatile Uncorr. ECC', 'MIG M.   Uncorr. ECC')
+                    header[-2] = header[-2].replace(
+                        'Volatile Uncorr. ECC',
+                        'MIG M.   Uncorr. ECC',
+                    )
             header.append(
                 '╞═══════════════════════════════╪══════════════════════╪══════════════════════╡',
             )
@@ -221,6 +249,13 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
                 ),
             )
         return header
+
+    @staticmethod
+    def _header_field(width, *labels):
+        field = [' '] * width
+        for offset, label in labels:
+            field[offset : offset + len(label)] = label
+        return ''.join(field)
 
     def frame_lines(self, compact=None):
         if compact is None:
