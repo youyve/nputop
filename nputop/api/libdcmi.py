@@ -40,16 +40,39 @@ DCMI_OK = 0
 MAX_CARD_NUM = 64
 MAX_CHIP_NAME_LEN = 32
 MAX_PROC_NUM_IN_DEVICE = 64
+PCIE_PROFILING_TIME_MS = 100
+DCMI_FAN_MAX_RPM = 18000
 
 # DCMI utilization-rate selectors from dcmi_interface_api.h.
 DCMI_UTILIZATION_RATE_DDR = 1
+DCMI_UTILIZATION_RATE_AICPU = 3
 DCMI_UTILIZATION_RATE_HBM = 6
+DCMI_UTILIZATION_RATE_HBM_BANDWIDTH = 10
 DCMI_UTILIZATION_RATE_NPU = 13
+
+# DCMI frequency selectors from dcmi_interface_api.h.
+DCMI_FREQ_DDR = 1
+DCMI_FREQ_HBM = 6
+DCMI_FREQ_AICORE_CURRENT = 7
+DCMI_FREQ_AICORE_MAX = 9
+
+# ``dcmi_get_device_ecc_info`` currently supports HBM on Ascend 910B.
+DCMI_DEVICE_TYPE_HBM = 2
 
 
 MemoryInfo = namedtuple("MemoryInfo", "total free used")
 ProcessInfo = namedtuple("Proc", "pid usedNpuMemory")
 UtilizationRates = namedtuple("UtilizationRates", "npu mem bandwidth aicpu")
+HbmInfo = namedtuple("HbmInfo", "total frequency used temperature bandwidth")
+ClockInfos = namedtuple("ClockInfos", "graphics sm memory video")
+ClockSpeedInfos = namedtuple("ClockSpeedInfos", "current max")
+ThroughputInfo = namedtuple("ThroughputInfo", "tx rx")
+DvppUtilization = namedtuple("DvppUtilization", "decoder encoder")
+EccInfo = namedtuple(
+    "EccInfo",
+    "enabled single_bit double_bit total_single_bit total_double_bit "
+    "single_bit_isolated_pages double_bit_isolated_pages",
+)
 
 
 class DcmiUnavailable(RuntimeError):
@@ -125,6 +148,41 @@ class _ProcMemInfo(ctypes.Structure):
     _fields_ = [
         ("proc_id", ctypes.c_int),
         ("proc_mem_usage", ctypes.c_ulong),
+    ]
+
+
+class _EccInfo(ctypes.Structure):
+    _fields_ = [
+        ("enable_flag", ctypes.c_int),
+        ("single_bit_error_cnt", ctypes.c_uint),
+        ("double_bit_error_cnt", ctypes.c_uint),
+        ("total_single_bit_error_cnt", ctypes.c_uint),
+        ("total_double_bit_error_cnt", ctypes.c_uint),
+        ("single_bit_isolated_pages_cnt", ctypes.c_uint),
+        ("double_bit_isolated_pages_cnt", ctypes.c_uint),
+    ]
+
+
+class _DvppRatio(ctypes.Structure):
+    _fields_ = [
+        ("vdec_ratio", ctypes.c_int),
+        ("vpc_ratio", ctypes.c_int),
+        ("venc_ratio", ctypes.c_int),
+        ("jpege_ratio", ctypes.c_int),
+        ("jpegd_ratio", ctypes.c_int),
+    ]
+
+
+class _PcieLinkBandwidthInfo(ctypes.Structure):
+    _fields_ = [
+        ("profiling_time", ctypes.c_int),
+        ("tx_p_bw", ctypes.c_uint * 3),
+        ("tx_np_bw", ctypes.c_uint * 3),
+        ("tx_cpl_bw", ctypes.c_uint * 3),
+        ("tx_np_lantency", ctypes.c_uint * 3),
+        ("rx_p_bw", ctypes.c_uint * 3),
+        ("rx_np_bw", ctypes.c_uint * 3),
+        ("rx_cpl_bw", ctypes.c_uint * 3),
     ]
 
 
@@ -290,17 +348,50 @@ class DcmiBackend:
                 ctypes.c_int,
                 ctypes.POINTER(ctypes.c_int),
             ],
+            "dcmi_get_device_frequency": [
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.POINTER(ctypes.c_uint),
+            ],
+            "dcmi_get_device_ecc_info": [
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.POINTER(_EccInfo),
+            ],
+            "dcmi_get_device_fan_count": [
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.POINTER(ctypes.c_int),
+            ],
+            "dcmi_get_device_fan_speed": [
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.POINTER(ctypes.c_int),
+            ],
             "dcmi_get_device_utilization_rate": [
                 ctypes.c_int,
                 ctypes.c_int,
                 ctypes.c_int,
                 ctypes.POINTER(ctypes.c_uint),
             ],
+            "dcmi_get_device_dvpp_ratio_info": [
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.POINTER(_DvppRatio),
+            ],
             "dcmi_get_device_resource_info": [
                 ctypes.c_int,
                 ctypes.c_int,
                 ctypes.POINTER(_ProcMemInfo),
                 ctypes.POINTER(ctypes.c_int),
+            ],
+            "dcmi_get_pcie_link_bandwidth_info": [
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.POINTER(_PcieLinkBandwidthInfo),
             ],
         }
         for name, argtypes in signatures.items():
@@ -415,13 +506,39 @@ class DcmiBackend:
         self._metadata[index] = (name, value)
         return value
 
-    def memory_info(self, index: int) -> MemoryInfo:
+    @staticmethod
+    def _valid_percentage(value: int) -> int | None:
+        return value if 0 <= value <= 100 else None
+
+    def hbm_info(self, index: int) -> HbmInfo:
+        """Return HBM capacity and auxiliary telemetry in normalized units.
+
+        DCMI reports capacity/usage in MiB, frequency in MHz, temperature in
+        degrees Celsius, and bandwidth utilization in percent.
+        """
+
         hbm = _HbmInfo()
-        if self._struct("dcmi_get_device_hbm_info", index, hbm) is not None:
-            total = int(hbm.memory_size) * 1024 * 1024
-            used = int(hbm.memory_usage) * 1024 * 1024
-            if total >= 0 and used >= 0:
-                return MemoryInfo(total, max(total - used, 0), used)
+        if self._struct("dcmi_get_device_hbm_info", index, hbm) is None:
+            return HbmInfo(NA, NA, NA, NA, NA)
+        total = int(hbm.memory_size) * 1024 * 1024
+        used = int(hbm.memory_usage) * 1024 * 1024
+        frequency = int(hbm.freq)
+        temperature = int(hbm.temp)
+        bandwidth = self._valid_percentage(int(hbm.bandwith_util_rate))
+        if total <= 0 or used < 0:
+            return HbmInfo(NA, NA, NA, NA, NA)
+        return HbmInfo(
+            total,
+            frequency if frequency >= 0 else NA,
+            min(used, total),
+            temperature if temperature >= 0 else NA,
+            NA if bandwidth is None else bandwidth,
+        )
+
+    def memory_info(self, index: int) -> MemoryInfo:
+        hbm = self.hbm_info(index)
+        if isinstance(hbm.total, int) and isinstance(hbm.used, int):
+            return MemoryInfo(hbm.total, max(hbm.total - hbm.used, 0), hbm.used)
 
         memory = _MemoryInfoV3()
         if self._struct("dcmi_get_device_memory_info_v3", index, memory) is not None:
@@ -431,6 +548,166 @@ class DcmiBackend:
                 used = max(total - available, 0)
                 return MemoryInfo(total, max(available, 0), used)
         return MemoryInfo(NA, NA, NA)
+
+    def _frequency(self, index: int, selector: int) -> int | None:
+        ref = self._device(index)
+        if ref is None or "dcmi_get_device_frequency" not in self._functions:
+            return None
+        value = ctypes.c_uint()
+        ret = self._call(
+            "dcmi_get_device_frequency",
+            ref.card_id,
+            ref.chip_id,
+            selector,
+            ctypes.byref(value),
+        )
+        return int(value.value) if ret == DCMI_OK else None
+
+    def clock_infos(self, index: int) -> ClockInfos:
+        """Return current NPU and memory clocks in MHz.
+
+        Ascend has no graphics/video clocks equivalent to CUDA's fields, so
+        those two members remain ``N/A``.  The AICORE clock is the closest
+        equivalent to nvitop's SM clock.
+        """
+
+        sm = self._frequency(index, DCMI_FREQ_AICORE_CURRENT)
+        memory = self._frequency(index, DCMI_FREQ_HBM)
+        if memory is None:
+            memory = self._frequency(index, DCMI_FREQ_DDR)
+        if memory is None:
+            hbm = self.hbm_info(index)
+            memory = hbm.frequency if isinstance(hbm.frequency, int) else None
+        return ClockInfos(
+            graphics=NA,
+            sm=NA if sm is None or sm < 0 else sm,
+            memory=NA if memory is None or memory < 0 else memory,
+            video=NA,
+        )
+
+    def max_clock_infos(self, index: int) -> ClockInfos:
+        sm = self._frequency(index, DCMI_FREQ_AICORE_MAX)
+        return ClockInfos(
+            graphics=NA,
+            sm=NA if sm is None or sm < 0 else sm,
+            memory=NA,
+            video=NA,
+        )
+
+    def clock_speed_infos(self, index: int) -> ClockSpeedInfos:
+        return ClockSpeedInfos(
+            current=self.clock_infos(index),
+            max=self.max_clock_infos(index),
+        )
+
+    def fan_speed(self, index: int) -> int | str:
+        """Return average fan speed as a percentage.
+
+        DCMI exposes RPM while nputop's public compatibility API follows
+        nvitop and exposes a percentage.  The DCMI documentation defines
+        18,000 RPM as the nominal maximum.
+        """
+
+        ref = self._device(index)
+        if ref is None:
+            return NA
+        count = ctypes.c_int()
+        if self._call(
+            "dcmi_get_device_fan_count",
+            ref.card_id,
+            ref.chip_id,
+            ctypes.byref(count),
+        ) != DCMI_OK or count.value <= 0:
+            return NA
+        speed = ctypes.c_int()
+        # fan_id 0 is explicitly documented as the average of all fans.
+        if self._call(
+            "dcmi_get_device_fan_speed",
+            ref.card_id,
+            ref.chip_id,
+            0,
+            ctypes.byref(speed),
+        ) != DCMI_OK or speed.value < 0:
+            return NA
+        return round(100 * int(speed.value) / DCMI_FAN_MAX_RPM)
+
+    def dvpp_utilization(self, index: int) -> DvppUtilization:
+        ref = self._device(index)
+        if ref is None or "dcmi_get_device_dvpp_ratio_info" not in self._functions:
+            return DvppUtilization(NA, NA)
+        ratio = _DvppRatio()
+        ret = self._call(
+            "dcmi_get_device_dvpp_ratio_info",
+            ref.card_id,
+            ref.chip_id,
+            ctypes.byref(ratio),
+        )
+        if ret != DCMI_OK:
+            return DvppUtilization(NA, NA)
+        decoder = self._valid_percentage(int(ratio.vdec_ratio))
+        encoder = self._valid_percentage(int(ratio.venc_ratio))
+        return DvppUtilization(
+            NA if decoder is None else decoder,
+            NA if encoder is None else encoder,
+        )
+
+    def ecc_info(self, index: int) -> EccInfo:
+        ref = self._device(index)
+        if ref is None or "dcmi_get_device_ecc_info" not in self._functions:
+            return EccInfo(NA, NA, NA, NA, NA, NA, NA)
+        info = _EccInfo()
+        ret = self._call(
+            "dcmi_get_device_ecc_info",
+            ref.card_id,
+            ref.chip_id,
+            DCMI_DEVICE_TYPE_HBM,
+            ctypes.byref(info),
+        )
+        if ret != DCMI_OK:
+            return EccInfo(NA, NA, NA, NA, NA, NA, NA)
+        return EccInfo(
+            int(info.enable_flag),
+            int(info.single_bit_error_cnt),
+            int(info.double_bit_error_cnt),
+            int(info.total_single_bit_error_cnt),
+            int(info.total_double_bit_error_cnt),
+            int(info.single_bit_isolated_pages_cnt),
+            int(info.double_bit_isolated_pages_cnt),
+        )
+
+    def total_volatile_uncorrected_ecc_errors(self, index: int) -> int | str:
+        info = self.ecc_info(index)
+        # ``double_bit`` is the volatile counter (cleared after restart).
+        # ``total_double_bit`` is a lifecycle aggregate and therefore does
+        # not match nvitop's ``volatile`` field.
+        return info.double_bit if isinstance(info.double_bit, int) else NA
+
+    def pcie_throughput(self, index: int) -> ThroughputInfo:
+        """Return PCIe TX/RX throughput in KiB/s.
+
+        The DCMI structure reports average bandwidth in MiB/ms.  Convert it
+        to the KiB/s unit used by nvitop's public API.  Each direction sums
+        posted, non-posted, and completion traffic.
+        """
+
+        ref = self._device(index)
+        if ref is None or "dcmi_get_pcie_link_bandwidth_info" not in self._functions:
+            return ThroughputInfo(NA, NA)
+        info = _PcieLinkBandwidthInfo()
+        info.profiling_time = PCIE_PROFILING_TIME_MS
+        ret = self._call(
+            "dcmi_get_pcie_link_bandwidth_info",
+            ref.card_id,
+            ref.chip_id,
+            ctypes.byref(info),
+        )
+        if ret != DCMI_OK:
+            return ThroughputInfo(NA, NA)
+        # Index 2 is the documented average (MIN/MAX/AVG).
+        tx = int(info.tx_p_bw[2] + info.tx_np_bw[2] + info.tx_cpl_bw[2])
+        rx = int(info.rx_p_bw[2] + info.rx_np_bw[2] + info.rx_cpl_bw[2])
+        scale = 1024 * 1000  # MiB/ms -> KiB/s
+        return ThroughputInfo(tx * scale, rx * scale)
 
     def _utilization(self, index: int, selector: int) -> int | None:
         ref = self._device(index)
@@ -458,11 +735,13 @@ class DcmiBackend:
             info = self.memory_info(index)
             if isinstance(info.used, int) and isinstance(info.total, int) and info.total:
                 memory = round(100 * info.used / info.total)
+        bandwidth = self._utilization(index, DCMI_UTILIZATION_RATE_HBM_BANDWIDTH)
+        aicpu = self._utilization(index, DCMI_UTILIZATION_RATE_AICPU)
         return UtilizationRates(
             NA if npu is None else npu,
             NA if memory is None else memory,
-            NA,
-            NA,
+            NA if bandwidth is None else bandwidth,
+            NA if aicpu is None else aicpu,
         )
 
     def temperature(self, index: int) -> int | str:
@@ -525,11 +804,18 @@ def create_backend(library: Any | None = None) -> DcmiBackend:
 
 __all__ = [
     "DCMI_OK",
+    "ClockInfos",
+    "ClockSpeedInfos",
     "DcmiBackend",
     "DcmiUnavailable",
+    "DvppUtilization",
+    "EccInfo",
+    "HbmInfo",
     "MemoryInfo",
     "NA",
+    "PCIE_PROFILING_TIME_MS",
     "ProcessInfo",
+    "ThroughputInfo",
     "UtilizationRates",
     "create_backend",
     "load_library",

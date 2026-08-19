@@ -48,6 +48,53 @@ class FakeDcmiLibrary:
         value._obj.value = 1234
         return 0
 
+    def dcmi_get_device_frequency(self, _card_id, _chip_id, selector, value):
+        values = {
+            libdcmi.DCMI_FREQ_AICORE_CURRENT: 800,
+            libdcmi.DCMI_FREQ_AICORE_MAX: 1800,
+            libdcmi.DCMI_FREQ_HBM: 1600,
+            libdcmi.DCMI_FREQ_DDR: 1200,
+        }
+        value._obj.value = values.get(selector, 0)
+        return 0
+
+    def dcmi_get_device_fan_count(self, _card_id, _chip_id, count):
+        count._obj.value = 1
+        return 0
+
+    def dcmi_get_device_fan_speed(self, _card_id, _chip_id, fan_id, speed):
+        assert fan_id == 0
+        speed._obj.value = 9000
+        return 0
+
+    def dcmi_get_device_dvpp_ratio_info(self, _card_id, _chip_id, ratio):
+        ratio._obj.vdec_ratio = 12
+        ratio._obj.vpc_ratio = 23
+        ratio._obj.venc_ratio = 34
+        ratio._obj.jpege_ratio = 45
+        ratio._obj.jpegd_ratio = 56
+        return 0
+
+    def dcmi_get_device_ecc_info(self, _card_id, _chip_id, _device_type, info):
+        info._obj.enable_flag = 1
+        info._obj.single_bit_error_cnt = 2
+        info._obj.double_bit_error_cnt = 3
+        info._obj.total_single_bit_error_cnt = 4
+        info._obj.total_double_bit_error_cnt = 5
+        info._obj.single_bit_isolated_pages_cnt = 6
+        info._obj.double_bit_isolated_pages_cnt = 7
+        return 0
+
+    def dcmi_get_pcie_link_bandwidth_info(self, _card_id, _chip_id, info):
+        assert info._obj.profiling_time == libdcmi.PCIE_PROFILING_TIME_MS
+        info._obj.tx_p_bw[2] = 1
+        info._obj.tx_np_bw[2] = 2
+        info._obj.tx_cpl_bw[2] = 3
+        info._obj.rx_p_bw[2] = 4
+        info._obj.rx_np_bw[2] = 5
+        info._obj.rx_cpl_bw[2] = 6
+        return 0
+
     def dcmi_get_device_utilization_rate(self, _card_id, _chip_id, selector, value):
         value._obj.value = 63 if selector == libdcmi.DCMI_UTILIZATION_RATE_NPU else 7
         return 0
@@ -84,9 +131,27 @@ def test_dcmi_backend_enumerates_devices_and_converts_units():
         (64 * 1024 - 1024) * 1024 * 1024,
         1024 * 1024 * 1024,
     )
+    assert backend.hbm_info(0) == libdcmi.HbmInfo(
+        64 * 1024 * 1024 * 1024,
+        1600,
+        1024 * 1024 * 1024,
+        42,
+        7,
+    )
     assert backend.temperature(0) == 42
     assert backend.power_usage(0) == 123400
     assert backend.utilization_rates(0).npu == 63
+    assert backend.utilization_rates(0).bandwidth == 7
+    assert backend.utilization_rates(0).aicpu == 7
+    assert backend.fan_speed(0) == 50
+    assert backend.clock_infos(0) == libdcmi.ClockInfos('N/A', 800, 1600, 'N/A')
+    assert backend.max_clock_infos(0) == libdcmi.ClockInfos('N/A', 1800, 'N/A', 'N/A')
+    assert backend.dvpp_utilization(0) == libdcmi.DvppUtilization(12, 34)
+    assert backend.total_volatile_uncorrected_ecc_errors(0) == 3
+    assert backend.pcie_throughput(0) == libdcmi.ThroughputInfo(
+        6 * 1024 * 1000,
+        15 * 1024 * 1000,
+    )
     assert backend.process_info(0) == (libdcmi.ProcessInfo(123, 4096),)
     assert backend.driver_version() == '9.1.0'
 
@@ -111,6 +176,26 @@ def test_libascend_uses_dcmi_backend_and_keeps_compat_types(monkeypatch):
     assert device.uuid() == 'ASCEND-05-00'
     assert device.bus_id() == '0000:20:00.0'
     assert device.memory_used() == 1024 * 1024 * 1024
+    assert device.fan_speed() == 50
+    assert device.encoder_utilization() == 34
+    assert device.decoder_utilization() == 12
+    assert device.memory_bandwidth_utilization() == 7
+    assert device.aicpu_utilization() == 7
+    assert device.hbm_frequency() == 1600
+    assert device.hbm_temperature() == 42
+    assert device.hbm_bandwidth() == 7
+    assert device.sm_clock() == 800
+    assert device.memory_clock() == 1600
+    assert device.pcie_tx_throughput() == 6 * 1024 * 1000
+    assert device.pcie_rx_throughput() == 15 * 1024 * 1000
+    assert device.total_volatile_uncorrected_ecc_errors() == 3
+    snapshot = device.as_snapshot()
+    assert snapshot.fan_speed == 50
+    assert snapshot.sm_clock == 800
+    assert snapshot.memory_clock == 1600
+    assert snapshot.encoder_utilization == 34
+    assert snapshot.decoder_utilization == 12
+    assert snapshot.total_volatile_uncorrected_ecc_errors == 3
 
     libascend._reset_dcmi_backend()
 

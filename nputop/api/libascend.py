@@ -60,6 +60,11 @@ _RE_P  = re.compile(r"^\|\s*(\d+)\s+(\d+)\s+\|\s+(\d+)\s+\|.*?\|\s+(\d+)")
 _RE_R = re.compile(r"^\|\s*(\S+)\s+([\d.rcRC]+)\s+Version:\s*([\d.rcRC]+)")
 
 Util = namedtuple("UtilizationRates", ["npu", "mem", "bandwidth", "aicpu"])
+ClockInfos = libdcmi.ClockInfos
+ClockSpeedInfos = libdcmi.ClockSpeedInfos
+ThroughputInfo = libdcmi.ThroughputInfo
+DvppUtilization = libdcmi.DvppUtilization
+HbmInfo = libdcmi.HbmInfo
 
 
 def _get_dcmi_backend():
@@ -274,6 +279,104 @@ def ascendDeviceGetUtilizationRates(i: int):
     id = _phys(i)
     return _CACHE.get(id, {}).get("util", NA)
 
+
+def ascendDeviceGetEncoderUtilization(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.dvpp_utilization(i).encoder
+        except Exception:
+            return NA
+    return NA
+
+
+def ascendDeviceGetDecoderUtilization(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.dvpp_utilization(i).decoder
+        except Exception:
+            return NA
+    return NA
+
+
+def ascendDeviceGetDvppUtilization(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.dvpp_utilization(i)
+        except Exception:
+            pass
+    return DvppUtilization(NA, NA)
+
+
+def ascendDeviceGetClockInfos(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.clock_infos(i)
+        except Exception:
+            pass
+    return ClockInfos(NA, NA, NA, NA)
+
+
+def ascendDeviceGetMaxClockInfos(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.max_clock_infos(i)
+        except Exception:
+            pass
+    return ClockInfos(NA, NA, NA, NA)
+
+
+def ascendDeviceGetClockSpeedInfos(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.clock_speed_infos(i)
+        except Exception:
+            pass
+    return ClockSpeedInfos(ClockInfos(NA, NA, NA, NA), ClockInfos(NA, NA, NA, NA))
+
+
+def ascendDeviceGetFanSpeed(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.fan_speed(i)
+        except Exception:
+            return NA
+    return NA
+
+
+def ascendDeviceGetPcieThroughput(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.pcie_throughput(i)
+        except Exception:
+            pass
+    return ThroughputInfo(NA, NA)
+
+
+def ascendDeviceGetPcieTxThroughput(i: int):
+    return ascendDeviceGetPcieThroughput(i).tx
+
+
+def ascendDeviceGetPcieRxThroughput(i: int):
+    return ascendDeviceGetPcieThroughput(i).rx
+
+
+def ascendDeviceGetEccErrors(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.total_volatile_uncorrected_ecc_errors(i)
+        except Exception:
+            return NA
+    return NA
+
 def ascendDeviceGetMemoryInfo(i:int):
     backend = _get_dcmi_backend()
     if backend is not None:
@@ -286,6 +389,48 @@ def ascendDeviceGetMemoryInfo(i:int):
     d=_CACHE.get(id,{})
     tot=d.get("hbm_total",0); used=d.get("hbm_used",0)
     return MemInfo(tot, tot-used, used)
+
+
+def ascendDeviceGetHbmInfo(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.hbm_info(i)
+        except Exception:
+            pass
+    return HbmInfo(NA, NA, NA, NA, NA)
+
+
+def ascendDeviceGetHbmFrequency(i: int):
+    return ascendDeviceGetHbmInfo(i).frequency
+
+
+def ascendDeviceGetHbmTemperature(i: int):
+    return ascendDeviceGetHbmInfo(i).temperature
+
+
+def ascendDeviceGetHbmBandwidth(i: int):
+    return ascendDeviceGetHbmInfo(i).bandwidth
+
+
+def ascendDeviceGetMemoryBandwidthUtilization(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.utilization_rates(i).bandwidth
+        except Exception:
+            return NA
+    return NA
+
+
+def ascendDeviceGetAicpuUtilization(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.utilization_rates(i).aicpu
+        except Exception:
+            return NA
+    return NA
 
 def ascendDeviceGetProcessInfo(i:int):
     backend = _get_dcmi_backend()
