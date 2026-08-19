@@ -9,7 +9,7 @@ import time
 
 from cachetools.func import ttl_cache
 
-from nputop.gui.library import NA, Device, Displayable, colored, cut_string, host, make_bar
+from nputop.gui.library import NA, Device, Displayable, colored, cut_string, make_bar
 from nputop.version import __version__
 
 
@@ -64,29 +64,18 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
             '│ {physical_index:>3} {fan_speed_string:>3} {temperature_string:>4} '
             ' {power_status:>15} '
             '│ {memory_usage:>20} │ {npu_utilization_string:>7}  {compute_mode:>11} │',
-            '│ {dcmi_clock_summary:<29} │ {dcmi_hbm_summary:<20} '
-            '│ {dcmi_utilization_summary:<20} │',
-            '│ {dcmi_pcie_summary:<29} │ DCMI telemetry       │ ECC total above      │',
         ]
         self.formats_full = [
-            '│ {physical_index:>3}  {name:<18}  {persistence_mode:<4} '
-            '│ {bus_id:<16} {display_active:>3} │ {total_volatile_uncorrected_ecc_errors:>20} │',
-            '│ {fan_speed_string:>3}  {temperature_string:>4}    {power_status:>16} '
-            '│ {memory_usage:>20} │ {npu_utilization_string:>7}  {compute_mode:>11} │',
-            '│ {dcmi_clock_summary:<29} │ {dcmi_hbm_summary:<20} '
-            '│ {dcmi_utilization_summary:<20} │',
-            '│ {dcmi_pcie_summary:<29} │ DCMI telemetry       │ ECC total above      │',
+            '│ {dcmi_aicore_pcie_summary:<29} │ {dcmi_bus_hbm_summary:<20} '
+            '│ {total_volatile_uncorrected_ecc_errors:>20} │',
+            '│ {dcmi_power_hbm_summary:<29} │ {memory_usage:>20} '
+            '│ {dcmi_npu_aux_summary:<20} │',
         ]
 
         self.mig_formats = [
             '│{physical_index:>2}:{mig_index:<2}{name:>12} @ GI/CI:{npu_instance_id:>2}/{compute_instance_id:<2}'
             '│ {memory_usage:>20} │ BAR1: {bar1_memory_used_human:>8} / {bar1_memory_percent_string:>3} │',
         ]
-
-        if host.WINDOWS:
-            self.formats_full[0] = self.formats_full[0].replace(
-                'current_driver_model',
-            )
 
         self.support_mig = any('N/A' not in device.mig_mode for device in self.snapshots)
         if self.support_mig:
@@ -95,18 +84,12 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
                 '{mig_mode:>8}  {total_volatile_uncorrected_ecc_errors:>10}',
             )
 
-        if self.device_count > 0:
-            self.compact_height = (
-                6
-                + (len(self.formats_compact) + 1) * self.device_count
-                + self.mig_device_count
-                + self.mig_enabled_device_count
-            )
-            self.full_height = self.compact_height + (
-                len(self.formats_full) - len(self.formats_compact)
-            ) * self.device_count + 1
-            self.height = self.compact_height if compact else self.full_height
-        else:
+        self.compact_height = (
+            4 + 2 * (self.device_count + 1) + self.mig_device_count + self.mig_enabled_device_count
+        )
+        self.full_height = self.compact_height + self.device_count + 1
+        self.height = self.compact_height if compact else self.full_height
+        if self.device_count == 0:
             self.height = self.full_height = self.compact_height = 6
 
     @property
@@ -220,12 +203,10 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
             else:
                 header.extend(
                     (
-                        '│ NPU  Name        Persistence-M│ Bus-Id        Disp.A │ Volatile Uncorr. ECC │',
-                        '│ Fan  Temp        Pwr:Usage/Cap│         Memory-Usage │ NPU-Util  Compute M. │',
+                        '│      NPU Name AICORE PCIe     │   Bus-Id / HBM MHz   │ Volatile Uncorr. ECC │',
+                        '│     Fan Temp Power HBM T/B    │     Memory-Usage     │   NPU CPU DVPP D/E   │',
                     ),
                 )
-                if host.WINDOWS:
-                    header[-2] = header[-2].replace('Persistence-M', '    TCC/WDDM ')
                 if self.support_mig:
                     header[-2] = header[-2].replace('Volatile Uncorr. ECC', 'MIG M.   Uncorr. ECC')
             header.append(
@@ -259,12 +240,11 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
             separator_line = separator_line[:-1] + '┼' + '─' * (remaining_width - 1) + '┤'
 
         if self.device_count > 0:
-            device_rows = len(self.formats_compact if compact else self.formats_full)
             for mig_device_count in self.mig_device_counts:
                 if compact:
-                    frame.extend((data_line,) * device_rows + (separator_line,))
+                    frame.extend((data_line, separator_line))
                 else:
-                    frame.extend((data_line,) * device_rows + (separator_line,))
+                    frame.extend((data_line, data_line, separator_line))
                 if mig_device_count > 0:
                     frame.extend((data_line,) * mig_device_count + (separator_line,))
 
@@ -311,7 +291,7 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
         except AttributeError:
             selected_device = None
 
-        y_start = self.y + len(self.header_lines()) + 1
+        y_start = self.y + len(formats) + 5
         prev_device_index = self.snapshots[0].tuple_index
         for index, device in enumerate(self.snapshots):  # pylint: disable=too-many-nested-blocks
             if (
@@ -452,7 +432,7 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
 
             if self.width >= 100:
                 remaining_width = self.width - 79
-                y_start = 1 + len(self.header_lines(compact=False))
+                y_start = 7
                 prev_device_index = self.snapshots[0].tuple_index
                 for index, device in enumerate(self.snapshots):
                     if (
@@ -491,15 +471,14 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
                         lines[y] += f' {colored(bar, color)} │'
 
                     if index == len(self.snapshots) - 1:
-                        row_count = len(self.mig_formats if device.is_mig_device else self.formats_full)
-                        lines[y_start + row_count] = (
-                            lines[y_start + row_count][:-1]
+                        lines[y_start + len(matrix)] = (
+                            lines[y_start + len(matrix)][:-1]
                             + '╧'
                             + '═' * (remaining_width - 1)
                             + '╛'
                         )
 
-                    y_start += len(self.mig_formats if device.is_mig_device else self.formats_full)
+                    y_start += len(matrix)
                     prev_device_index = device.tuple_index
 
         lines = '\n'.join(lines)

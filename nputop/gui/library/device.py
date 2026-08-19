@@ -65,10 +65,10 @@ class Device(DeviceBase):
         'decoder_utilization',
         'pcie_tx_throughput_human',
         'pcie_rx_throughput_human',
-        'dcmi_clock_summary',
-        'dcmi_hbm_summary',
-        'dcmi_utilization_summary',
-        'dcmi_pcie_summary',
+        'dcmi_aicore_pcie_summary',
+        'dcmi_bus_hbm_summary',
+        'dcmi_power_hbm_summary',
+        'dcmi_npu_aux_summary',
         'memory_loading_intensity',
         'memory_display_color',
         'npu_loading_intensity',
@@ -146,28 +146,58 @@ class Device(DeviceBase):
     def _metric(value, suffix=''):
         return f'{value}{suffix}' if value != NA else NA
 
-    def dcmi_clock_summary(self):
+    @staticmethod
+    def _short_rate(value):
+        if value == NA:
+            return NA
+        value = f'{value / (1024 * 1000):.1f}'
+        return value[:-2] if value.endswith('.0') else value
+
+    def dcmi_aicore_pcie_summary(self):
+        name = cut_string(self.name(), maxlen=10, padstr='..', align='right')
         current = self._metric(self.sm_clock())
         maximum = self._metric(self.max_sm_clock())
-        memory = self._metric(self.memory_clock())
-        return cut_string(f'AIC {current}/{maximum}MHz HBM {memory}MHz', 29, padstr='..')
+        tx = self._short_rate(self.pcie_tx_throughput())
+        rx = self._short_rate(self.pcie_rx_throughput())
+        pcie = f'{tx}/{rx}G' if tx != NA and rx != NA else f'{tx}/{rx}'
+        return cut_string(
+            f'{self.physical_index} {name} A{current}/{maximum} P{pcie}',
+            29,
+            padstr='..',
+        )
 
-    def dcmi_hbm_summary(self):
-        frequency = self._metric(self.hbm_frequency(), 'M')
-        temperature = self._metric(self.hbm_temperature(), 'C')
-        bandwidth = self._metric(self.hbm_bandwidth(), '%')
-        return cut_string(f'HBM {frequency} {temperature} BW{bandwidth}', 20, padstr='..')
+    def dcmi_bus_hbm_summary(self):
+        bus_id = self.bus_id()
+        if bus_id != NA and len(bus_id) > 10 and ':' in bus_id:
+            bus_id = bus_id.split(':', 1)[1]
+        frequency = self._metric(self.memory_clock())
+        return cut_string(f'{bus_id} H{frequency}', 20, padstr='..')
 
-    def dcmi_utilization_summary(self):
-        aicpu = utilization2string(self.aicpu_utilization())
-        encoder = utilization2string(self.encoder_utilization())
-        decoder = utilization2string(self.decoder_utilization())
-        return cut_string(f'CPU {aicpu} DVPP {encoder}/{decoder}', 20, padstr='..')
+    def dcmi_power_hbm_summary(self):
+        fan = self.fan_speed_string()
+        temperature = self.temperature_string()
+        power_usage = self.power_usage()
+        power_limit = self.power_limit()
+        if isinstance(power_usage, int):
+            power = f'P{power_usage / 1000:.0f}W'
+            if isinstance(power_limit, int):
+                power += f'/{power_limit:.0f}W'
+        else:
+            power = 'P' + NA
+        hbm_temperature = self._metric(self.hbm_temperature())
+        hbm_bandwidth = self._metric(self.hbm_bandwidth())
+        return cut_string(
+            f'{fan} {temperature} {power} H{hbm_temperature}/B{hbm_bandwidth}',
+            29,
+            padstr='..',
+        )
 
-    def dcmi_pcie_summary(self):
-        tx = self.pcie_tx_throughput_human()
-        rx = self.pcie_rx_throughput_human()
-        return cut_string(f'PCIe T{tx} R{rx}', 29, padstr='..')
+    def dcmi_npu_aux_summary(self):
+        npu = self._metric(self.npu_utilization(), '%')
+        aicpu = self._metric(self.aicpu_utilization(), '%')
+        decoder = self._metric(self.decoder_utilization())
+        encoder = self._metric(self.encoder_utilization())
+        return cut_string(f'N{npu} C{aicpu} D{decoder}/E{encoder}', 20, padstr='..')
 
     def memory_loading_intensity(self):
         return self.loading_intensity_of(self.memory_percent(), type='memory')

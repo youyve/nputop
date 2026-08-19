@@ -205,18 +205,23 @@ def test_libascend_uses_dcmi_backend_and_keeps_compat_types(monkeypatch):
     assert gui_snapshot.hbm_bandwidth == 7
     assert gui_snapshot.memory_bandwidth_utilization == 7
     assert gui_snapshot.aicpu_utilization == 7
-    assert gui_snapshot.dcmi_clock_summary == 'AIC 800/1800MHz HBM 1600MHz'
-    assert gui_snapshot.dcmi_hbm_summary == 'HBM 1600M 42C BW7%'
-    assert gui_snapshot.dcmi_utilization_summary == 'CPU 7% DVPP 34%/12%'
-    assert gui_snapshot.dcmi_pcie_summary == 'PCIe T6000MiB/s R15000MiB/s'
+    assert gui_snapshot.dcmi_aicore_pcie_summary == '0 Fake910 A800/1800 P6/15G'
+    assert gui_snapshot.dcmi_bus_hbm_summary == '20:00.0 H1600'
+    assert gui_snapshot.dcmi_power_hbm_summary == '50% 42 P123W H42/B7'
+    assert gui_snapshot.dcmi_npu_aux_summary == 'N63% C7% D12/E34'
 
     class Root:
         width = 79
 
     panel = DevicePanel([GuiDevice(0)], compact=True, win=None, root=Root())
-    assert len(panel.formats_compact) == 3
-    assert panel.height == 10
+    assert len(panel.formats_compact) == 1
+    assert panel.height == 8
     assert all(len(line) == 79 for line in panel.frame_lines())
+
+    full_panel = DevicePanel([GuiDevice(0)], compact=False, win=None, root=Root())
+    assert len(full_panel.formats_full) == 2
+    assert full_panel.height == 10
+    assert all(len(line) == 79 for line in full_panel.frame_lines())
 
     libascend._reset_dcmi_backend()
 
