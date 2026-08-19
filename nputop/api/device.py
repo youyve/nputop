@@ -303,25 +303,28 @@ class Device:  # pylint: disable=too-many-instance-attributes
     def memory_utilization(self) -> int | NaType:
         return self.utilization_rates().memory
 
+    @memoize_when_activated
     def memory_bandwidth_utilization(self) -> int | NaType:
         return libnvml.nvmlQuery(
             "ascendDeviceGetMemoryBandwidthUtilization", self.index
         )
 
+    @memoize_when_activated
     def aicpu_utilization(self) -> int | NaType:
         return libnvml.nvmlQuery("ascendDeviceGetAicpuUtilization", self.index)
 
+    @memoize_when_activated
     def hbm_info(self) -> Any:
         return libnvml.nvmlQuery("ascendDeviceGetHbmInfo", self.index)
 
     def hbm_frequency(self) -> int | NaType:
-        return libnvml.nvmlQuery("ascendDeviceGetHbmFrequency", self.index)
+        return getattr(self.hbm_info(), "frequency", NA)
 
     def hbm_temperature(self) -> int | NaType:
-        return libnvml.nvmlQuery("ascendDeviceGetHbmTemperature", self.index)
+        return getattr(self.hbm_info(), "temperature", NA)
 
     def hbm_bandwidth(self) -> int | NaType:
-        return libnvml.nvmlQuery("ascendDeviceGetHbmBandwidth", self.index)
+        return getattr(self.hbm_info(), "bandwidth", NA)
 
     def decoder_utilization(self) -> int | NaType:
         return self.utilization_rates().decoder
@@ -418,6 +421,9 @@ class Device:  # pylint: disable=too-many-instance-attributes
                 try:
                     self.memory_info.cache_activate(self)        # type: ignore[attr-defined]
                     self.utilization_rates.cache_activate(self)  # type: ignore[attr-defined]
+                    self.memory_bandwidth_utilization.cache_activate(self)  # type: ignore[attr-defined]
+                    self.aicpu_utilization.cache_activate(self)  # type: ignore[attr-defined]
+                    self.hbm_info.cache_activate(self)            # type: ignore[attr-defined]
                     self.clock_infos.cache_activate(self)        # type: ignore[attr-defined]
                     self.max_clock_infos.cache_activate(self)    # type: ignore[attr-defined]
                     self.pcie_throughput.cache_activate(self)    # type: ignore[attr-defined]
@@ -425,6 +431,9 @@ class Device:  # pylint: disable=too-many-instance-attributes
                 finally:
                     self.memory_info.cache_deactivate(self)      # type: ignore[attr-defined]
                     self.utilization_rates.cache_deactivate(self)  # type: ignore[attr-defined]
+                    self.memory_bandwidth_utilization.cache_deactivate(self)  # type: ignore[attr-defined]
+                    self.aicpu_utilization.cache_deactivate(self)  # type: ignore[attr-defined]
+                    self.hbm_info.cache_deactivate(self)            # type: ignore[attr-defined]
                     self.clock_infos.cache_deactivate(self)      # type: ignore[attr-defined]
                     self.max_clock_infos.cache_deactivate(self)  # type: ignore[attr-defined]
                     self.pcie_throughput.cache_deactivate(self)  # type: ignore[attr-defined]

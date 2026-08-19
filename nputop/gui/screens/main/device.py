@@ -45,13 +45,6 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
 
         self._compact = compact
         self.width = max(79, root.width)
-        self.compact_height = (
-            4 + 2 * (self.device_count + 1) + self.mig_device_count + self.mig_enabled_device_count
-        )
-        self.full_height = self.compact_height + self.device_count + 1
-        self.height = self.compact_height if compact else self.full_height
-        if self.device_count == 0:
-            self.height = self.full_height = self.compact_height = 6
 
         self.driver_version = Device.driver_version()
         self.cuda_driver_version = Device.cuda_driver_version()
@@ -71,12 +64,18 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
             '│ {physical_index:>3} {fan_speed_string:>3} {temperature_string:>4} '
             ' {power_status:>15} '
             '│ {memory_usage:>20} │ {npu_utilization_string:>7}  {compute_mode:>11} │',
+            '│ {dcmi_clock_summary:<29} │ {dcmi_hbm_summary:<20} '
+            '│ {dcmi_utilization_summary:<20} │',
+            '│ {dcmi_pcie_summary:<29} │ DCMI telemetry       │ ECC total above      │',
         ]
         self.formats_full = [
             '│ {physical_index:>3}  {name:<18}  {persistence_mode:<4} '
             '│ {bus_id:<16} {display_active:>3} │ {total_volatile_uncorrected_ecc_errors:>20} │',
             '│ {fan_speed_string:>3}  {temperature_string:>4}    {power_status:>16} '
             '│ {memory_usage:>20} │ {npu_utilization_string:>7}  {compute_mode:>11} │',
+            '│ {dcmi_clock_summary:<29} │ {dcmi_hbm_summary:<20} '
+            '│ {dcmi_utilization_summary:<20} │',
+            '│ {dcmi_pcie_summary:<29} │ DCMI telemetry       │ ECC total above      │',
         ]
 
         self.mig_formats = [
@@ -95,6 +94,20 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
                 '{total_volatile_uncorrected_ecc_errors:>20}',
                 '{mig_mode:>8}  {total_volatile_uncorrected_ecc_errors:>10}',
             )
+
+        if self.device_count > 0:
+            self.compact_height = (
+                6
+                + (len(self.formats_compact) + 1) * self.device_count
+                + self.mig_device_count
+                + self.mig_enabled_device_count
+            )
+            self.full_height = self.compact_height + (
+                len(self.formats_full) - len(self.formats_compact)
+            ) * self.device_count + 1
+            self.height = self.compact_height if compact else self.full_height
+        else:
+            self.height = self.full_height = self.compact_height = 6
 
     @property
     def width(self):
@@ -246,11 +259,12 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
             separator_line = separator_line[:-1] + '┼' + '─' * (remaining_width - 1) + '┤'
 
         if self.device_count > 0:
+            device_rows = len(self.formats_compact if compact else self.formats_full)
             for mig_device_count in self.mig_device_counts:
                 if compact:
-                    frame.extend((data_line, separator_line))
+                    frame.extend((data_line,) * device_rows + (separator_line,))
                 else:
-                    frame.extend((data_line, data_line, separator_line))
+                    frame.extend((data_line,) * device_rows + (separator_line,))
                 if mig_device_count > 0:
                     frame.extend((data_line,) * mig_device_count + (separator_line,))
 
@@ -297,7 +311,7 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
         except AttributeError:
             selected_device = None
 
-        y_start = self.y + len(formats) + 5
+        y_start = self.y + len(self.header_lines()) + 1
         prev_device_index = self.snapshots[0].tuple_index
         for index, device in enumerate(self.snapshots):  # pylint: disable=too-many-nested-blocks
             if (
@@ -438,7 +452,7 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
 
             if self.width >= 100:
                 remaining_width = self.width - 79
-                y_start = 7
+                y_start = 1 + len(self.header_lines(compact=False))
                 prev_device_index = self.snapshots[0].tuple_index
                 for index, device in enumerate(self.snapshots):
                     if (
@@ -477,14 +491,15 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
                         lines[y] += f' {colored(bar, color)} │'
 
                     if index == len(self.snapshots) - 1:
-                        lines[y_start + len(matrix)] = (
-                            lines[y_start + len(matrix)][:-1]
+                        row_count = len(self.mig_formats if device.is_mig_device else self.formats_full)
+                        lines[y_start + row_count] = (
+                            lines[y_start + row_count][:-1]
                             + '╧'
                             + '═' * (remaining_width - 1)
                             + '╛'
                         )
 
-                    y_start += len(matrix)
+                    y_start += len(self.mig_formats if device.is_mig_device else self.formats_full)
                     prev_device_index = device.tuple_index
 
         lines = '\n'.join(lines)

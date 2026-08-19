@@ -11,6 +11,7 @@ from nputop.api import MigDevice as MigDeviceBase
 from nputop.api import PhysicalDevice as DeviceBase
 from nputop.api import utilization2string
 from nputop.gui.library.process import NpuProcess
+from nputop.gui.library.utils import cut_string
 
 
 __all__ = ['Device', 'NA']
@@ -54,6 +55,20 @@ class Device(DeviceBase):
         'npu_utilization_string',
         'fan_speed_string',
         'temperature_string',
+        'max_sm_clock',
+        'hbm_frequency',
+        'hbm_temperature',
+        'hbm_bandwidth',
+        'memory_bandwidth_utilization',
+        'aicpu_utilization',
+        'encoder_utilization',
+        'decoder_utilization',
+        'pcie_tx_throughput_human',
+        'pcie_rx_throughput_human',
+        'dcmi_clock_summary',
+        'dcmi_hbm_summary',
+        'dcmi_utilization_summary',
+        'dcmi_pcie_summary',
         'memory_loading_intensity',
         'memory_display_color',
         'npu_loading_intensity',
@@ -124,6 +139,36 @@ class Device(DeviceBase):
     def temperature_string(self):  # in Celsius
         return self.temperature()
 
+    def max_sm_clock(self):
+        return self.max_clock_infos().sm
+
+    @staticmethod
+    def _metric(value, suffix=''):
+        return f'{value}{suffix}' if value != NA else NA
+
+    def dcmi_clock_summary(self):
+        current = self._metric(self.sm_clock())
+        maximum = self._metric(self.max_sm_clock())
+        memory = self._metric(self.memory_clock())
+        return cut_string(f'AIC {current}/{maximum}MHz HBM {memory}MHz', 29, padstr='..')
+
+    def dcmi_hbm_summary(self):
+        frequency = self._metric(self.hbm_frequency(), 'M')
+        temperature = self._metric(self.hbm_temperature(), 'C')
+        bandwidth = self._metric(self.hbm_bandwidth(), '%')
+        return cut_string(f'HBM {frequency} {temperature} BW{bandwidth}', 20, padstr='..')
+
+    def dcmi_utilization_summary(self):
+        aicpu = utilization2string(self.aicpu_utilization())
+        encoder = utilization2string(self.encoder_utilization())
+        decoder = utilization2string(self.decoder_utilization())
+        return cut_string(f'CPU {aicpu} DVPP {encoder}/{decoder}', 20, padstr='..')
+
+    def dcmi_pcie_summary(self):
+        tx = self.pcie_tx_throughput_human()
+        rx = self.pcie_rx_throughput_human()
+        return cut_string(f'PCIe T{tx} R{rx}', 29, padstr='..')
+
     def memory_loading_intensity(self):
         return self.loading_intensity_of(self.memory_percent(), type='memory')
 
@@ -173,6 +218,3 @@ class Device(DeviceBase):
     @staticmethod
     def color_of(utilization, type='memory'):  # pylint: disable=redefined-builtin
         return Device.INTENSITY2COLOR.get(Device.loading_intensity_of(utilization, type=type))
-
-
-

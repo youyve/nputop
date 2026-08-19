@@ -3,6 +3,8 @@ import ctypes
 from nputop.api import libascend, libdcmi
 from nputop.api.device import Device
 from nputop.api.utils import NA
+from nputop.gui.library.device import Device as GuiDevice
+from nputop.gui.screens.main.device import DevicePanel
 
 
 class FakeDcmiLibrary:
@@ -196,6 +198,25 @@ def test_libascend_uses_dcmi_backend_and_keeps_compat_types(monkeypatch):
     assert snapshot.encoder_utilization == 34
     assert snapshot.decoder_utilization == 12
     assert snapshot.total_volatile_uncorrected_ecc_errors == 3
+
+    gui_snapshot = GuiDevice(0).as_snapshot()
+    assert gui_snapshot.hbm_frequency == 1600
+    assert gui_snapshot.hbm_temperature == 42
+    assert gui_snapshot.hbm_bandwidth == 7
+    assert gui_snapshot.memory_bandwidth_utilization == 7
+    assert gui_snapshot.aicpu_utilization == 7
+    assert gui_snapshot.dcmi_clock_summary == 'AIC 800/1800MHz HBM 1600MHz'
+    assert gui_snapshot.dcmi_hbm_summary == 'HBM 1600M 42C BW7%'
+    assert gui_snapshot.dcmi_utilization_summary == 'CPU 7% DVPP 34%/12%'
+    assert gui_snapshot.dcmi_pcie_summary == 'PCIe T6000MiB/s R15000MiB/s'
+
+    class Root:
+        width = 79
+
+    panel = DevicePanel([GuiDevice(0)], compact=True, win=None, root=Root())
+    assert len(panel.formats_compact) == 3
+    assert panel.height == 10
+    assert all(len(line) == 79 for line in panel.frame_lines())
 
     libascend._reset_dcmi_backend()
 
