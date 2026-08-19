@@ -110,12 +110,17 @@ class Device:  # pylint: disable=too-many-instance-attributes
 
     def uuid(self) -> str | NaType:
         if self._uuid is None:
-            # Ascend 没 UUID，用伪造方便去重
-            self._uuid = f"ASCEND-{self.index:02d}"
+            value = libnvml.nvmlQuery(
+                "ascendDeviceGetUUID", self.index, default=NA
+            )
+            # DCMI exposes stable card/chip identity through the compatibility
+            # layer. Keep the old index-based value when running the fallback
+            # parser or when a driver does not provide one.
+            self._uuid = value if isinstance(value, str) and value != NA else f"ASCEND-{self.index:02d}"
         return self._uuid
 
     def bus_id(self) -> str | NaType:
-        return NA
+        return libnvml.nvmlQuery("ascendDeviceGetBusId", self.index, default=NA)
 
     # ------------------------------------------------------------
     # 设备数量
