@@ -17,6 +17,15 @@ def test_ui_print_uses_cached_snapshots_after_monitor_exit():
     ui.main_screen.print.assert_called_once_with(refresh=False)
 
 
+def test_ui_print_refreshes_for_non_interactive_output():
+    ui = object.__new__(UI)
+    ui.main_screen = Mock()
+
+    ui.print(refresh=True)
+
+    ui.main_screen.print.assert_called_once_with(refresh=True)
+
+
 def test_process_panel_cached_print_does_not_collect_again(monkeypatch, capsys):
     panel = ProcessPanel([], compact=True, filters=[], win=None, root=Root())
     collect = Mock(side_effect=AssertionError('unexpected synchronous collection'))

@@ -347,6 +347,7 @@ def main() -> int:
         filters.append(lambda process: process.pid in pids)
 
     ui = None
+    monitor_running = False
     if hasattr(args, 'monitor') and len(devices) > 0:
         try:
             with libcurses(colorful=args.colorful, light_theme=args.light) as win:
@@ -358,6 +359,7 @@ def main() -> int:
                     interval=args.interval,
                     win=win,
                 )
+                monitor_running = True
                 ui.loop()
         except curses.error as ex:
             if ui is not None:
@@ -383,7 +385,7 @@ def main() -> int:
     # A monitor already collected snapshots in background threads.  Do not
     # start another synchronous collection after q exits curses; this can
     # block shutdown on slow process or driver queries.
-    ui.print(refresh=not hasattr(args, 'monitor'))
+    ui.print(refresh=not monitor_running)
     ui.destroy()
 
     if len(messages) > 0:
