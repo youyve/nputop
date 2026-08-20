@@ -46,19 +46,16 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
         self._compact = compact
         self.width = max(79, root.width)
 
-        self.driver_version = Device.driver_version()
-        self.cuda_driver_version = Device.cuda_driver_version()
+        # Metadata and device snapshots are queried by DCMI.  Both operations
+        # can block while the driver is busy (especially on multi-card hosts),
+        # so keep the UI construction path free of device I/O.  The worker
+        # fills these values before the first completed snapshot is published.
+        self.driver_version = NA
+        self.cuda_driver_version = NA
 
         self._snapshot_buffer = []
         self._snapshots = []
         self.snapshot_lock = threading.Lock()
-        self.snapshots = self.take_snapshots()
-        self._snapshot_daemon = threading.Thread(
-            name='device-snapshot-daemon',
-            target=self._snapshot_target,
-            daemon=True,
-        )
-        self._daemon_running = threading.Event()
 
         self.formats_compact = [
             '│ {physical_index:>3} {fan_speed_string:>3} {temperature_string:>4} '
@@ -71,18 +68,19 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
             '│ {dcmi_power_hbm_summary:<29} │ {memory_usage:>20} '
             '│ {dcmi_npu_aux_summary:<20} │',
         ]
+        self.support_mig = False
+
+        self._snapshot_daemon = threading.Thread(
+            name='device-snapshot-daemon',
+            target=self._snapshot_target,
+            daemon=True,
+        )
+        self._daemon_running = threading.Event()
 
         self.mig_formats = [
             '│{physical_index:>2}:{mig_index:<2}{name:>12} @ GI/CI:{npu_instance_id:>2}/{compute_instance_id:<2}'
             '│ {memory_usage:>20} │ BAR1: {bar1_memory_used_human:>8} / {bar1_memory_percent_string:>3} │',
         ]
-
-        self.support_mig = any('N/A' not in device.mig_mode for device in self.snapshots)
-        if self.support_mig:
-            self.formats_full[0] = self.formats_full[0].replace(
-                '{total_volatile_uncorrected_ecc_errors:>20}',
-                '{mig_mode:>8}  {total_volatile_uncorrected_ecc_errors:>10}',
-            )
 
         self.compact_height = (
             4 + 2 * (self.device_count + 1) + self.mig_device_count + self.mig_enabled_device_count
@@ -122,6 +120,16 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
     def snapshots(self, snapshots):
         with self.snapshot_lock:
             self._snapshots = snapshots
+
+        support_mig = any('N/A' not in device.mig_mode for device in snapshots)
+        if support_mig != self.support_mig:
+            self.support_mig = support_mig
+            if support_mig:
+                self.formats_full[0] = self.formats_full[0].replace(
+                    '{total_volatile_uncorrected_ecc_errors:>20}',
+                    '{mig_mode:>8}  {total_volatile_uncorrected_ecc_errors:>10}',
+                )
+            self.need_redraw = True
 
     @classmethod
     def set_snapshot_interval(cls, interval):
@@ -171,9 +179,28 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
 
     def _snapshot_target(self):
         self._daemon_running.wait()
+
+        # Keep all DCMI work, including the header metadata, off the curses
+        # thread.  A failed metadata query is represented by N/A just like
+        # individual snapshot fields.
+        self._load_metadata()
+
         while self._daemon_running.is_set():
             self.take_snapshots()
             time.sleep(self.SNAPSHOT_INTERVAL)
+
+    def _load_metadata(self):
+        """Load the driver labels used by the static device header."""
+
+        try:
+            self.driver_version = Device.driver_version()
+        except Exception:  # pragma: no cover - defensive for vendor drivers
+            self.driver_version = NA
+        try:
+            self.cuda_driver_version = Device.cuda_driver_version()
+        except Exception:  # pragma: no cover - defensive for vendor drivers
+            self.cuda_driver_version = NA
+        self.need_redraw = True
 
     def header_lines(self, compact=None):
         if compact is None:
@@ -327,6 +354,14 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
             selected_device = None
 
         y_start = self.y + len(formats) + 5
+        if not self.snapshots:
+            self.addstr(
+                y_start,
+                self.x + 2,
+                'Gathering device status...'.ljust(max(0, self.width - 4)),
+            )
+            return
+
         prev_device_index = self.snapshots[0].tuple_index
         for index, device in enumerate(self.snapshots):  # pylint: disable=too-many-nested-blocks
             if (
@@ -435,9 +470,27 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
         return 79
 
     def print(self, refresh=True):  # pylint: disable=too-many-locals,too-many-branches,unused-argument
+        if refresh:
+            self._load_metadata()
+            self.snapshots = self.take_snapshots()
+
         lines = [time.strftime('%a %b %d %H:%M:%S %Y'), *self.header_lines(compact=False)]
 
         if self.device_count > 0:
+            if not self.snapshots:
+                lines.append('│ Gathering device status...'.ljust(78) + '│')
+                lines.append(
+                    '╘═══════════════════════════════╧══════════════════════╧══════════════════════╛',
+                )
+                output = '\n'.join(lines)
+                if self.ascii:
+                    output = output.translate(self.ASCII_TRANSTABLE)
+                try:
+                    print(output)
+                except UnicodeError:
+                    print(output.translate(self.ASCII_TRANSTABLE))
+                return
+
             prev_device_index = self.snapshots[0].tuple_index
             for device in self.snapshots:
                 if (
