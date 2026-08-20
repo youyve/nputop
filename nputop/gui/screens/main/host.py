@@ -382,16 +382,17 @@ class HostPanel(Displayable):  # pylint: disable=too-many-instance-attributes
         super().destroy()
         self._daemon_running.clear()
 
-    def print_width(self):
+    def print_width(self, refresh=True):  # pylint: disable=unused-argument
         if self.device_count > 0 and self.width >= 100:
             return self.width
         return 79
 
-    def print(self):
-        self.cpu_percent = host.cpu_percent()
-        self.virtual_memory = host.virtual_memory()
-        self.swap_memory = host.swap_memory()
-        self.load_average = host.load_average()
+    def print(self, refresh=True):
+        if refresh:
+            self.cpu_percent = host.cpu_percent()
+            self.virtual_memory = host.virtual_memory()
+            self.swap_memory = host.swap_memory()
+            self.load_average = host.load_average()
 
         if self.load_average is not None:
             load_average = tuple(

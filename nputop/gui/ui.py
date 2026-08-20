@@ -202,7 +202,11 @@ class UI(DisplayableContainer):  # pylint: disable=too-many-instance-attributes
             pass
 
     def print(self):
-        self.main_screen.print()
+        # A monitor has already been collecting snapshots in the background.
+        # Re-querying synchronously while leaving curses can make ``q`` appear
+        # to hang when process enumeration is slow.  Non-interactive callers
+        # still use the fresh-snapshot path.
+        self.main_screen.print(refresh=self.win is None)
 
     def handle_mouse(self):
         """Handle mouse input."""

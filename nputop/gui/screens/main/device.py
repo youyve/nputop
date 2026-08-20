@@ -429,12 +429,12 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
         super().destroy()
         self._daemon_running.clear()
 
-    def print_width(self):
+    def print_width(self, refresh=True):  # pylint: disable=unused-argument
         if self.device_count > 0 and self.width >= 100:
             return self.width
         return 79
 
-    def print(self):  # pylint: disable=too-many-locals,too-many-branches
+    def print(self, refresh=True):  # pylint: disable=too-many-locals,too-many-branches,unused-argument
         lines = [time.strftime('%a %b %d %H:%M:%S %Y'), *self.header_lines(compact=False)]
 
         if self.device_count > 0:
