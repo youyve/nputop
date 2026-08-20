@@ -380,7 +380,10 @@ def main() -> int:
                         'Please try `nputop -m` directly.',
                     )
 
-    ui.print()
+    # A monitor already collected snapshots in background threads.  Do not
+    # start another synchronous collection after q exits curses; this can
+    # block shutdown on slow process or driver queries.
+    ui.print(refresh=not hasattr(args, 'monitor'))
     ui.destroy()
 
     if len(messages) > 0:

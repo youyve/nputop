@@ -10,10 +10,9 @@ class Root:
 
 def test_ui_print_uses_cached_snapshots_after_monitor_exit():
     ui = object.__new__(UI)
-    ui.win = object()
     ui.main_screen = Mock()
 
-    ui.print()
+    ui.print(refresh=False)
 
     ui.main_screen.print.assert_called_once_with(refresh=False)
 
