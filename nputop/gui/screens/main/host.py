@@ -248,12 +248,18 @@ class HostPanel(Displayable):  # pylint: disable=too-many-instance-attributes
         if not self._daemon_running.is_set():
             self._daemon_running.set()
             self._snapshot_daemon.start()
-            self.take_snapshots()
 
         super().poke()
 
     def draw(self):  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
         self.color_reset()
+
+        # The first host snapshot is collected by the daemon.  Render a
+        # complete placeholder frame while that collection is in flight so
+        # the curses thread remains available for input.
+        cpu_percent = self.cpu_percent if self.cpu_percent is not None else NA
+        virtual_memory = self.virtual_memory
+        swap_memory = self.swap_memory
 
         if self.load_average is not None:
             load_average = tuple(
@@ -269,7 +275,7 @@ class HostPanel(Displayable):  # pylint: disable=too-many-instance-attributes
             cpu_bar = '[ {} ]'.format(
                 make_bar(
                     'CPU',
-                    self.cpu_percent,
+                    cpu_percent,
                     width_left - 4,
                     extra_text=f'  UPTIME: {timedelta2human(host.uptime(), round=True)}',
                 ),
@@ -277,12 +283,22 @@ class HostPanel(Displayable):  # pylint: disable=too-many-instance-attributes
             memory_bar = '[ {} ]'.format(
                 make_bar(
                     'MEM',
-                    self.virtual_memory.percent,
+                    virtual_memory.percent if virtual_memory is not None else NA,
                     width_left - 4,
-                    extra_text=f'  USED: {bytes2human(self.virtual_memory.used, min_unit=GiB)}',
+                    extra_text=(
+                        f'  USED: {bytes2human(virtual_memory.used, min_unit=GiB)}'
+                        if virtual_memory is not None
+                        else '  USED: N/A'
+                    ),
                 ),
             )
-            swap_bar = '[ {} ]'.format(make_bar('SWP', self.swap_memory.percent, width_right - 4))
+            swap_bar = '[ {} ]'.format(
+                make_bar(
+                    'SWP',
+                    swap_memory.percent if swap_memory is not None else NA,
+                    width_right - 4,
+                ),
+            )
             self.addstr(self.y, self.x, f'{cpu_bar}  ( {load_average} )')
             self.addstr(self.y + 1, self.x, f'{memory_bar}  {swap_bar}')
             self.color_at(self.y, self.x, width=len(cpu_bar), fg='cyan', attr='bold')
@@ -367,12 +383,14 @@ class HostPanel(Displayable):  # pylint: disable=too-many-instance-attributes
         self.addstr(
             self.y + 9,
             self.x + 1,
-            f' MEM: {bytes2human(self.virtual_memory.used, min_unit=GiB)} ({host.virtual_memory.history}) ',
+            f' MEM: {bytes2human(virtual_memory.used, min_unit=GiB) if virtual_memory is not None else NA} '
+            f'({host.virtual_memory.history}) ',
         )
         self.addstr(
             self.y + 10,
             self.x + 1,
-            f' SWP: {bytes2human(self.swap_memory.used, min_unit=GiB)} ({host.swap_memory.history}) ',
+            f' SWP: {bytes2human(swap_memory.used, min_unit=GiB) if swap_memory is not None else NA} '
+            f'({host.swap_memory.history}) ',
         )
         if self.width >= 100:
             self.addstr(self.y, self.x + 79, f' {npu_memory_percent} ')
@@ -382,16 +400,17 @@ class HostPanel(Displayable):  # pylint: disable=too-many-instance-attributes
         super().destroy()
         self._daemon_running.clear()
 
-    def print_width(self):
+    def print_width(self, refresh=True):  # pylint: disable=unused-argument
         if self.device_count > 0 and self.width >= 100:
             return self.width
         return 79
 
-    def print(self):
-        self.cpu_percent = host.cpu_percent()
-        self.virtual_memory = host.virtual_memory()
-        self.swap_memory = host.swap_memory()
-        self.load_average = host.load_average()
+    def print(self, refresh=True):
+        if refresh:
+            self.cpu_percent = host.cpu_percent()
+            self.virtual_memory = host.virtual_memory()
+            self.swap_memory = host.swap_memory()
+            self.load_average = host.load_average()
 
         if self.load_average is not None:
             load_average = tuple(

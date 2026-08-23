@@ -347,6 +347,7 @@ def main() -> int:
         filters.append(lambda process: process.pid in pids)
 
     ui = None
+    monitor_running = False
     if hasattr(args, 'monitor') and len(devices) > 0:
         try:
             with libcurses(colorful=args.colorful, light_theme=args.light) as win:
@@ -358,6 +359,7 @@ def main() -> int:
                     interval=args.interval,
                     win=win,
                 )
+                monitor_running = True
                 ui.loop()
         except curses.error as ex:
             if ui is not None:
@@ -380,7 +382,11 @@ def main() -> int:
                         'Please try `nputop -m` directly.',
                     )
 
-    ui.print()
+    # A monitor already rendered its state in curses.  Printing the complete
+    # report again after ``q`` scales with every device/process and can block
+    # shutdown on a multi-card host while the terminal drains the output.
+    if not monitor_running:
+        ui.print(refresh=True)
     ui.destroy()
 
     if len(messages) > 0:

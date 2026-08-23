@@ -556,15 +556,23 @@ class ProcessPanel(Displayable):  # pylint: disable=too-many-instance-attributes
         super().destroy()
         self._daemon_running.clear()
 
-    def print_width(self):
-        self.ensure_snapshots()
+    def print_width(self, refresh=True):
+        if refresh:
+            self.ensure_snapshots()
+        elif self._snapshot_buffer is not None:
+            self.snapshots = self._snapshot_buffer
         return min(
             self.width,
             max((39 + len(process.host_info) for process in self.snapshots), default=79),
         )
 
-    def print(self):
-        self.ensure_snapshots()
+    def print(self, refresh=True):
+        if refresh:
+            self.ensure_snapshots()
+        elif self._snapshot_buffer is not None:
+            # During monitor shutdown, render the most recent completed
+            # collection instead of blocking on a new process enumeration.
+            self.snapshots = self._snapshot_buffer
 
         lines = ['', *self.header_lines()]
         lines[2] = ''.join(

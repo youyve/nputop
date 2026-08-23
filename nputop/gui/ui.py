@@ -194,15 +194,19 @@ class UI(DisplayableContainer):  # pylint: disable=too-many-instance-attributes
 
         try:
             while True:
-                self.redraw()
                 self.handle_input()
+                # Poll input before starting another render pass.  Snapshot
+                # workers are intentionally asynchronous, but this ordering
+                # also lets an already queued `q` terminate without waiting
+                # for a repaint on a busy multi-card host.
+                self.redraw()
                 if time.monotonic() - self.last_input_time > 1.0:
                     time.sleep(0.2)
         except BreakLoop:
             pass
 
-    def print(self):
-        self.main_screen.print()
+    def print(self, refresh=True):
+        self.main_screen.print(refresh=refresh)
 
     def handle_mouse(self):
         """Handle mouse input."""
