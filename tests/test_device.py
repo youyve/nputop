@@ -15,6 +15,24 @@ def test_memory_info_normalizes_failed_query(monkeypatch):
     assert device.memory_percent() == NA
 
 
+def test_memory_info_falls_back_when_hbm_telemetry_is_unavailable(monkeypatch):
+    expected = MemoryInfo(total=16, free=6, used=10)
+
+    def query(name, *_args, **_kwargs):
+        if name == 'ascendDeviceGetHbmInfo':
+            return NA
+        if name == 'ascendDeviceGetMemoryInfo':
+            return expected
+        return NA
+
+    monkeypatch.setattr(device_module.libnvml, 'nvmlQuery', query)
+
+    device = Device(0)
+
+    assert device.memory_info() == expected
+    assert device.memory_used() == expected.used
+
+
 def test_snapshot_survives_failed_memory_query(monkeypatch):
     monkeypatch.setattr(device_module.libnvml, "nvmlQuery", lambda *args, **kwargs: NA)
 

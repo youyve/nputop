@@ -10,6 +10,12 @@ from nputop.gui.screens.main.device import DevicePanel
 class FakeDcmiLibrary:
     """Minimal ctypes-compatible DCMI double used by unit tests."""
 
+    def __init__(self):
+        self.call_counts = {}
+
+    def _record(self, name):
+        self.call_counts[name] = self.call_counts.get(name, 0) + 1
+
     def dcmi_init(self):
         return 0
 
@@ -35,6 +41,7 @@ class FakeDcmiLibrary:
         return 0
 
     def dcmi_get_device_hbm_info(self, _card_id, chip_id, info):
+        self._record('hbm')
         info._obj.memory_size = 64 * 1024
         info._obj.memory_usage = 1024 + chip_id
         info._obj.freq = 1600
@@ -98,6 +105,7 @@ class FakeDcmiLibrary:
         return 0
 
     def dcmi_get_device_utilization_rate(self, _card_id, _chip_id, selector, value):
+        self._record(f'utilization:{selector}')
         value._obj.value = 63 if selector == libdcmi.DCMI_UTILIZATION_RATE_NPU else 7
         return 0
 
@@ -185,7 +193,9 @@ def test_libascend_uses_dcmi_backend_and_keeps_compat_types(monkeypatch):
     assert device.aicpu_utilization() == 7
     assert device.hbm_frequency() == 1600
     assert device.hbm_temperature() == 42
+    assert device.hbm_bandwidth_utilization() == 7
     assert device.hbm_bandwidth() == 7
+    assert device.aicore_clock() == 800
     assert device.sm_clock() == 800
     assert device.memory_clock() == 1600
     assert device.pcie_tx_throughput() == 6 * 1024 * 1000
@@ -202,13 +212,13 @@ def test_libascend_uses_dcmi_backend_and_keeps_compat_types(monkeypatch):
     gui_snapshot = GuiDevice(0).as_snapshot()
     assert gui_snapshot.hbm_frequency == 1600
     assert gui_snapshot.hbm_temperature == 42
-    assert gui_snapshot.hbm_bandwidth == 7
+    assert gui_snapshot.hbm_bandwidth_utilization == 7
     assert gui_snapshot.memory_bandwidth_utilization == 7
     assert gui_snapshot.aicpu_utilization == 7
-    assert gui_snapshot.dcmi_aicore_pcie_summary == ' 0 Fake910 A800/1800 P 6/15G '
-    assert gui_snapshot.dcmi_bus_hbm_summary == '    20:00.0 H1600MHz'
-    assert gui_snapshot.dcmi_power_hbm_summary == '50% T 42 P123/--  H42/B 7    '
-    assert gui_snapshot.dcmi_npu_aux_summary == 'N63% C 7% D12/E34   '
+    assert gui_snapshot.aicore_pcie_summary == ' 0 Fake910 A800/1800 T 6/R15 '
+    assert gui_snapshot.bus_memory_summary == '    20:00.0 M1600MHz'
+    assert gui_snapshot.power_hbm_summary == '50% T 42 P123/--  H42/B 7    '
+    assert gui_snapshot.npu_aux_summary == 'N63% C 7% D12/E34   '
 
     class Root:
         width = 79
@@ -230,21 +240,39 @@ def test_libascend_uses_dcmi_backend_and_keeps_compat_types(monkeypatch):
     second_columns = [line.split('│')[2][1:-1] for line in full_headers]
     third_columns = [line.split('│')[3][1:-1] for line in full_headers]
 
-    assert first_columns[0].index('AICORE') == 11
-    assert first_columns[0].index('PCIe') == 21
+    assert first_columns[0] == 'ID Name AICORE PCIe T/R GiB/s'
     assert first_columns[1].index('Fan') == 0
     assert first_columns[1].index('Temp') == 4
     assert first_columns[1].index('Power') == 9
-    assert first_columns[1].index('HBM T/B') == 18
+    assert first_columns[1].index('HBM T/BW%') == 15
 
-    assert second_columns[0].index('Bus-Id') == 4
-    assert second_columns[0].index('HBM') == 12
+    assert second_columns[0].index('Bus-Id') == 3
+    assert second_columns[0].index('Memory') == 10
     assert second_columns[0].index('MHz') == 17
     assert second_columns[1] == 'Memory-Usage'.rjust(20)
 
     assert third_columns[1].index('NPU%') == 0
-    assert third_columns[1].index('CPU%') == 5
-    assert third_columns[1].index('DVPP') == 10
+    assert third_columns[1].index('AICPU%') == 5
+    assert third_columns[1].index('DVPP') == 12
+
+    libascend._reset_dcmi_backend()
+
+
+def test_gui_snapshot_collects_shared_dcmi_telemetry_once(monkeypatch):
+    library = FakeDcmiLibrary()
+    backend = libdcmi.create_backend(library)
+    monkeypatch.setattr(libascend.libdcmi, 'create_backend', lambda: backend)
+    libascend._reset_dcmi_backend()
+
+    GuiDevice(0).as_snapshot()
+
+    assert library.call_counts == {
+        'hbm': 1,
+        f'utilization:{libdcmi.DCMI_UTILIZATION_RATE_NPU}': 1,
+        f'utilization:{libdcmi.DCMI_UTILIZATION_RATE_HBM}': 1,
+        f'utilization:{libdcmi.DCMI_UTILIZATION_RATE_HBM_BANDWIDTH}': 1,
+        f'utilization:{libdcmi.DCMI_UTILIZATION_RATE_AICPU}': 1,
+    }
 
     libascend._reset_dcmi_backend()
 
