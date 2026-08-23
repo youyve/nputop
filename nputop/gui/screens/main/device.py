@@ -63,10 +63,10 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
             '│ {memory_usage:>20} │ {npu_utilization_string:>7}  {compute_mode:>11} │',
         ]
         self.formats_full = [
-            '│ {dcmi_aicore_pcie_summary:<29} │ {dcmi_bus_hbm_summary:<20} '
+            '│ {aicore_pcie_summary:<29} │ {bus_memory_summary:<20} '
             '│ {total_volatile_uncorrected_ecc_errors:>20} │',
-            '│ {dcmi_power_hbm_summary:<29} │ {memory_usage:>20} '
-            '│ {dcmi_npu_aux_summary:<20} │',
+            '│ {power_hbm_summary:<29} │ {memory_usage:>20} '
+            '│ {npu_aux_summary:<20} │',
         ]
         self.support_mig = False
 
@@ -229,18 +229,11 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
                 )
             else:
                 first_line = '│ {} │ {} │ {} │'.format(
-                    self._header_field(
-                        29,
-                        (0, 'NPU'),
-                        (4, 'Name'),
-                        (11, 'AICORE'),
-                        (21, 'PCIe'),
-                    ),
+                    'ID Name AICORE PCIe T/R GiB/s',
                     self._header_field(
                         20,
-                        (4, 'Bus-Id'),
-                        (11, '/'),
-                        (12, 'HBM'),
+                        (3, 'Bus-Id'),
+                        (10, 'Memory'),
                         (17, 'MHz'),
                     ),
                     'Volatile Uncorr. ECC',
@@ -251,10 +244,10 @@ class DevicePanel(Displayable):  # pylint: disable=too-many-instance-attributes
                         (0, 'Fan'),
                         (4, 'Temp'),
                         (9, 'Power'),
-                        (18, 'HBM T/B'),
+                        (15, 'HBM T/BW%'),
                     ),
                     'Memory-Usage'.rjust(20),
-                    'NPU% CPU% DVPP D/E'.ljust(20),
+                    'NPU% AICPU% DVPP D/E'.ljust(20),
                 )
                 header.extend(
                     (first_line, second_line),
