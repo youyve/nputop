@@ -33,6 +33,11 @@ ULONGLONG_MAX : int  = 0xFFFFFFFFFFFFFFFF
 _CACHE      : dict[int, dict[str,Any]] = {}   # 物理 id ↦ 数据
 _IDX        : list[int] = []                  # 逻辑 index ↦ 物理 id
 _CACHE_TTL  = 0.8
+# Query timeout in seconds: keep the original 3s default (also on detection
+# failure), and use 10s when the chip mapping identifies an Ascend950 (A5).
+_DEFAULT_SMI_TIMEOUT = 3.0
+_A5_SMI_TIMEOUT = 10.0
+_SMI_TIMEOUT: float | None = None
 _cache_ts   = 0.0
 _CACHE_LOCK = threading.RLock()
 _DRIVER_VERSION = None
@@ -53,9 +58,45 @@ _npu_chip_phy : dict[tuple[int, int], int] = {} # (npu id, chip_id) ↦ phy id
 _RE_L1 = re.compile(r"^\|\s*(\d+)\s+(\S+).*?\|\s*(\S+)\s+\|\s*(\S+)\s+(\d+)")
 _RE_L2 = re.compile(r"^\|\s*(\d+)\s+(\d*)\s*\|\s*([0-9A-Fa-f:.]+|NA)\s*\|\s*(\d+).*?\|$")
 _RE_P  = re.compile(r"^\|\s*(\d+)\s+(\d+)\s+\|\s+(\d+)\s+\|.*?\|\s+(\d+)")
-_RE_R = re.compile(r"^\|\s*(\S+)\s+([\d.rcRC]+)\s+Version:\s*([\d.rcRC]+)")
+# The NPU-ID layout (seen on A5) has separate ID/Name columns, no Chip
+# or Phy-ID, and an optional trailing container PID in the process table.
+_RE_ID_L1 = re.compile(
+    r"^\|\s*(\d+)\s*\|\s*([^\s|]+)\s*\|\s*(\S+)\s*\|\s*(\S+)\s+(\d+)"
+)
+_RE_ID_L2 = re.compile(
+    r"^\|\s*\|\s*\|\s*([0-9A-Fa-f:.]+|NA)\s*\|\s*(\d+).*?\|$"
+)
+_RE_ID_P = re.compile(
+    r"^\|\s*(\d+)\s*\|\s*(\d+)\s*\|[^|]*\|\s*(\d+)\s*\|"
+)
+_RE_R = re.compile(r"\bVersion:\s*([^\s|]+)")
 
 Util = namedtuple("UtilizationRates", ["npu", "mem", "bandwidth", "aicpu"])
+
+
+def _smi_timeout() -> float:
+    """Detect A5 once before the first full query, preserving the legacy timeout."""
+    global _SMI_TIMEOUT
+    if _SMI_TIMEOUT is not None:
+        return _SMI_TIMEOUT
+
+    # Mapping queries are much faster than full monitoring queries on A5.
+    # Keep the default if an older driver cannot provide this information.
+    try:
+        result = subprocess.run(
+            ['npu-smi', 'info', '-m'], text=True, capture_output=True,
+            timeout=_DEFAULT_SMI_TIMEOUT, check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        _SMI_TIMEOUT = _DEFAULT_SMI_TIMEOUT
+    else:
+        _SMI_TIMEOUT = (
+            _A5_SMI_TIMEOUT
+            if re.search(r'\bAscend950[A-Za-z0-9]*\b', result.stdout)
+            else _DEFAULT_SMI_TIMEOUT
+        )
+    return _SMI_TIMEOUT
+
 
 def _update_cache(raw: str = None) -> None:
     global _cache_ts
@@ -69,24 +110,33 @@ def _update_cache(raw: str = None) -> None:
 
         if not raw:
             raw = subprocess.run(
-                ["npu-smi","info"], text=True, capture_output=True, timeout=3
+                ["npu-smi","info"], text=True, capture_output=True, timeout=_smi_timeout()
             ).stdout
         raw = raw.splitlines()
 
         data: dict[int, dict[str,Any]] = {}
         chip_phy: dict[tuple[int, int], int] = {}
+        id_only = False
+        process_id_only = False
         
         raw_iter = iter(raw)
-        next(raw_iter)
-        ln_l0 = next(raw_iter).strip()
-        if _DRIVER_VERSION is None:
-            m0 = _RE_R.match(ln_l0)
-            if m0:
-                _,_DRIVER_VERSION,_ = m0.groups()
         for ln in raw_iter:
             ln = ln.strip()
+            if _DRIVER_VERSION is None:
+                m0 = _RE_R.search(ln)
+                if m0:
+                    _DRIVER_VERSION = m0.group(1)
 
-            m1 = _RE_L1.match(ln)
+            # Select by table layout, not model name or driver version.
+            columns = [column.strip() for column in ln.split('|')[1:-1]]
+            if columns[:2] == ['NPU ID', 'Name']:
+                id_only = True
+                continue
+            if len(columns) > 1 and columns[1] == 'Process id':
+                process_id_only = columns[0] == 'NPU ID'
+                continue
+
+            m1 = (_RE_ID_L1 if id_only else _RE_L1).match(ln)
             
             if m1:
                 npu_id, name, ok, pwr, tmp = m1.groups()
@@ -109,10 +159,14 @@ def _update_cache(raw: str = None) -> None:
                     chip_phy[(d['npu_id'], d['chip_id'])] = cur_id
                     break
 
-                m2 = _RE_L2.match(ln_l2)
+                m2 = (_RE_ID_L2 if id_only else _RE_L2).match(ln_l2)
 
                 if m2:
-                    chip_id, phy_id, bus, aic = m2.groups()
+                    if id_only:
+                        bus, aic = m2.groups()
+                        chip_id, phy_id = '0', None
+                    else:
+                        chip_id, phy_id, bus, aic = m2.groups()
                     chip_id_kwargs = {'chip_id': int(chip_id)} if chip_id else {}
 
                     if phy_id:
@@ -140,9 +194,13 @@ def _update_cache(raw: str = None) -> None:
 
                 continue
 
-            mp = _RE_P.match(ln)
+            mp = (_RE_ID_P if process_id_only else _RE_P).match(ln)
             if mp:
-                npu_id, chip_id, pid, mem = map(int, mp.groups())
+                if process_id_only:
+                    npu_id, pid, mem = map(int, mp.groups())
+                    chip_id = 0
+                else:
+                    npu_id, chip_id, pid, mem = map(int, mp.groups())
                 phy_id = chip_phy.get((npu_id, chip_id))
                 if phy_id is None:
                     continue
