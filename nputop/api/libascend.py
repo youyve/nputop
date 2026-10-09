@@ -23,6 +23,8 @@ from typing import Any
 from collections.abc import Callable
 import platform
 
+from nputop.api import libdcmi
+
 # --------- 常量 ----------
 NA            : str  = "N/A"
 UINT_MAX      : int  = 0xFFFFFFFF
@@ -49,6 +51,8 @@ _POWER_LIMIT = {
     "910C": 350,
 }
 _npu_chip_phy : dict[tuple[int, int], int] = {} # (npu id, chip_id) ↦ phy id
+_DCMI_BACKEND = None
+_DCMI_ATTEMPTED = False
 # --------- Regex ----------
 _RE_L1 = re.compile(r"^\|\s*(\d+)\s+(\S+).*?\|\s*(\S+)\s+\|\s*(\S+)\s+(\d+)")
 _RE_L2 = re.compile(r"^\|\s*(\d+)\s+(\d*)\s*\|\s*([0-9A-Fa-f:.]+|NA)\s*\|\s*(\d+).*?\|$")
@@ -56,15 +60,45 @@ _RE_P  = re.compile(r"^\|\s*(\d+)\s+(\d+)\s+\|\s+(\d+)\s+\|.*?\|\s+(\d+)")
 _RE_R = re.compile(r"^\|\s*(\S+)\s+([\d.rcRC]+)\s+Version:\s*([\d.rcRC]+)")
 
 Util = namedtuple("UtilizationRates", ["npu", "mem", "bandwidth", "aicpu"])
+ClockInfos = libdcmi.ClockInfos
+ClockSpeedInfos = libdcmi.ClockSpeedInfos
+ThroughputInfo = libdcmi.ThroughputInfo
+DvppUtilization = libdcmi.DvppUtilization
+HbmInfo = libdcmi.HbmInfo
+
+
+def _get_dcmi_backend():
+    """Return the initialized DCMI backend, or ``None`` for the fallback path."""
+
+    global _DCMI_ATTEMPTED
+    global _DCMI_BACKEND
+    if _DCMI_ATTEMPTED:
+        return _DCMI_BACKEND
+
+    _DCMI_ATTEMPTED = True
+    try:
+        _DCMI_BACKEND = libdcmi.create_backend()
+    except Exception:  # DCMI is an optional system dependency.
+        _DCMI_BACKEND = None
+    return _DCMI_BACKEND
+
+
+def _reset_dcmi_backend() -> None:
+    """Reset lazy backend state (primarily useful for tests)."""
+
+    global _DCMI_ATTEMPTED
+    global _DCMI_BACKEND
+    _DCMI_ATTEMPTED = False
+    _DCMI_BACKEND = None
 
 def _update_cache(raw: str = None) -> None:
     global _cache_ts
     global _DRIVER_VERSION
-    if time.time() - _cache_ts < _CACHE_TTL:
+    if raw is None and time.time() - _cache_ts < _CACHE_TTL:
         return
 
     with _CACHE_LOCK:
-        if time.time() - _cache_ts < _CACHE_TTL:
+        if raw is None and time.time() - _cache_ts < _CACHE_TTL:
             return
 
         if not raw:
@@ -173,26 +207,249 @@ MemInfo  = namedtuple("MemoryInfo","total free used")
 ProcInfo = namedtuple("Proc","pid usedNpuMemory")
 
 def ascendDeviceGetCount() -> int:
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.count()
+        except Exception:
+            return 0
     _update_cache(); return len(_IDX)
 
-def ascendDeviceGetName(i:int):             id=_phys(i); return _CACHE.get(id,{}).get("name",NA)
-def ascendDeviceGetTemperature(i:int):      id=_phys(i); return _CACHE.get(id,{}).get("temp",NA)
-def ascendDeviceGetPowerUsage(i:int):       id=_phys(i); return _CACHE.get(id,{}).get("power",NA)
-def ascendDeviceGetUtilizationRates(i:int): id=_phys(i); return _CACHE.get(id,{}).get("util",NA)
+def ascendDeviceGetUUID(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.uuid(i) or NA
+        except Exception:
+            return NA
+    return f"ASCEND-{i:02d}"
+
+
+def ascendDeviceGetBusId(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.bus_id(i)
+        except Exception:
+            return NA
+    id = _phys(i)
+    return _CACHE.get(id, {}).get("bus_id", NA)
+
+
+def ascendDeviceGetName(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.name(i)
+        except Exception:
+            return NA
+    id = _phys(i)
+    return _CACHE.get(id, {}).get("name", NA)
+
+
+def ascendDeviceGetTemperature(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.temperature(i)
+        except Exception:
+            return NA
+    id = _phys(i)
+    return _CACHE.get(id, {}).get("temp", NA)
+
+
+def ascendDeviceGetPowerUsage(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.power_usage(i)
+        except Exception:
+            return NA
+    id = _phys(i)
+    return _CACHE.get(id, {}).get("power", NA)
+
+
+def ascendDeviceGetUtilizationRates(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return Util(*backend.utilization_rates(i))
+        except Exception:
+            return NA
+    id = _phys(i)
+    return _CACHE.get(id, {}).get("util", NA)
+
+
+def ascendDeviceGetEncoderUtilization(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.dvpp_utilization(i).encoder
+        except Exception:
+            return NA
+    return NA
+
+
+def ascendDeviceGetDecoderUtilization(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.dvpp_utilization(i).decoder
+        except Exception:
+            return NA
+    return NA
+
+
+def ascendDeviceGetDvppUtilization(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.dvpp_utilization(i)
+        except Exception:
+            pass
+    return DvppUtilization(NA, NA)
+
+
+def ascendDeviceGetClockInfos(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.clock_infos(i)
+        except Exception:
+            pass
+    return ClockInfos(NA, NA, NA, NA)
+
+
+def ascendDeviceGetMaxClockInfos(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.max_clock_infos(i)
+        except Exception:
+            pass
+    return ClockInfos(NA, NA, NA, NA)
+
+
+def ascendDeviceGetClockSpeedInfos(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.clock_speed_infos(i)
+        except Exception:
+            pass
+    return ClockSpeedInfos(ClockInfos(NA, NA, NA, NA), ClockInfos(NA, NA, NA, NA))
+
+
+def ascendDeviceGetFanSpeed(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.fan_speed(i)
+        except Exception:
+            return NA
+    return NA
+
+
+def ascendDeviceGetPcieThroughput(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.pcie_throughput(i)
+        except Exception:
+            pass
+    return ThroughputInfo(NA, NA)
+
+
+def ascendDeviceGetPcieTxThroughput(i: int):
+    return ascendDeviceGetPcieThroughput(i).tx
+
+
+def ascendDeviceGetPcieRxThroughput(i: int):
+    return ascendDeviceGetPcieThroughput(i).rx
+
+
+def ascendDeviceGetEccErrors(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.total_volatile_uncorrected_ecc_errors(i)
+        except Exception:
+            return NA
+    return NA
 
 def ascendDeviceGetMemoryInfo(i:int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return MemInfo(*backend.memory_info(i))
+        except Exception:
+            return MemInfo(NA, NA, NA)
     id=_phys(i)
     if id is None: return MemInfo(0,0,0)
     d=_CACHE.get(id,{})
     tot=d.get("hbm_total",0); used=d.get("hbm_used",0)
     return MemInfo(tot, tot-used, used)
 
+
+def ascendDeviceGetHbmInfo(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.hbm_info(i)
+        except Exception:
+            pass
+    return HbmInfo(NA, NA, NA, NA, NA)
+
+
+def ascendDeviceGetHbmFrequency(i: int):
+    return ascendDeviceGetHbmInfo(i).frequency
+
+
+def ascendDeviceGetHbmTemperature(i: int):
+    return ascendDeviceGetHbmInfo(i).temperature
+
+
+def ascendDeviceGetHbmBandwidth(i: int):
+    return ascendDeviceGetHbmInfo(i).bandwidth
+
+
+def ascendDeviceGetMemoryBandwidthUtilization(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.utilization_rates(i).bandwidth
+        except Exception:
+            return NA
+    return NA
+
+
+def ascendDeviceGetAicpuUtilization(i: int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.utilization_rates(i).aicpu
+        except Exception:
+            return NA
+    return NA
+
 def ascendDeviceGetProcessInfo(i:int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return tuple(ProcInfo(p.pid, p.usedNpuMemory) for p in backend.process_info(i))
+        except Exception:
+            return ()
     id=_phys(i)
     if id is None: return []
     return [ProcInfo(pid,mem) for pid,mem in _CACHE.get(id,{}).get("procs",[])]
 
 def ascendSystemGetDriverVersion() -> str:
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            return backend.driver_version()
+        except Exception:
+            return NA
     global _DRIVER_VERSION
     return _DRIVER_VERSION or NA
 
@@ -212,6 +469,13 @@ def ascendSystemGetCANNVersion() -> str:
         return NA
     
 def ascendDeviceGetPowerLimit(i:int):
+    backend = _get_dcmi_backend()
+    if backend is not None:
+        try:
+            chip_name = backend.name(i)
+        except Exception:
+            return NA
+        return _POWER_LIMIT.get(chip_name, NA)
     id=_phys(i)
     if id is None: return NA
     chip_name = _CACHE.get(id,{}).get("name")

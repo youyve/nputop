@@ -148,15 +148,15 @@ class MainScreen(DisplayableContainer):  # pylint: disable=too-many-instance-att
 
         super().draw()
 
-    def print(self):
+    def print(self, refresh=True):
         if self.device_count > 0:
-            print_width = min(panel.print_width() for panel in self.container)
+            print_width = min(panel.print_width(refresh=refresh) for panel in self.container)
             self.width = max(print_width, min(self.width, 100))
         else:
             self.width = 79
         for panel in self.container:
             panel.width = self.width
-            panel.print()
+            panel.print(refresh=refresh)
 
     def __contains__(self, item):
         if self.visible and isinstance(item, MouseEvent):

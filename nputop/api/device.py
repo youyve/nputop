@@ -59,6 +59,40 @@ class UtilizationRates(NamedTuple):
         return self.npu
 
 
+class UtilizationTelemetry(NamedTuple):
+    """Raw device-wide utilization values used to derive snapshot fields."""
+
+    npu: int | NaType
+    memory: int | NaType
+    bandwidth: int | NaType
+    aicpu: int | NaType
+
+
+class ClockInfos(NamedTuple):
+    graphics: int | NaType
+    sm: int | NaType
+    memory: int | NaType
+    video: int | NaType
+
+
+class ClockSpeedInfos(NamedTuple):
+    current: ClockInfos
+    max: ClockInfos
+
+
+class ThroughputInfo(NamedTuple):
+    tx: int | NaType
+    rx: int | NaType
+
+    @property
+    def transmit(self) -> int | NaType:
+        return self.tx
+
+    @property
+    def receive(self) -> int | NaType:
+        return self.rx
+
+
 # ────────────────────────────────────────────────────────────────
 # Ascend NPU 设备类
 # ────────────────────────────────────────────────────────────────
@@ -110,12 +144,17 @@ class Device:  # pylint: disable=too-many-instance-attributes
 
     def uuid(self) -> str | NaType:
         if self._uuid is None:
-            # Ascend 没 UUID，用伪造方便去重
-            self._uuid = f"ASCEND-{self.index:02d}"
+            value = libnvml.nvmlQuery(
+                "ascendDeviceGetUUID", self.index, default=NA
+            )
+            # DCMI exposes stable card/chip identity through the compatibility
+            # layer. Keep the old index-based value when running the fallback
+            # parser or when a driver does not provide one.
+            self._uuid = value if isinstance(value, str) and value != NA else f"ASCEND-{self.index:02d}"
         return self._uuid
 
     def bus_id(self) -> str | NaType:
-        return NA
+        return libnvml.nvmlQuery("ascendDeviceGetBusId", self.index, default=NA)
 
     # ------------------------------------------------------------
     # 设备数量
@@ -170,10 +209,10 @@ class Device:  # pylint: disable=too-many-instance-attributes
         return "N/A"
 
     # ------------------------------------------------------------
-    # Fan 占位
+    # Fan telemetry (DCMI reports RPM, compatibility layer normalizes it to %)
     # ------------------------------------------------------------
     def fan_speed(self) -> int | NaType:
-        return NA
+        return libnvml.nvmlQuery("ascendDeviceGetFanSpeed", self.index)
 
     # ------------------------------------------------------------
     # 温度 & 功耗
@@ -212,6 +251,16 @@ class Device:  # pylint: disable=too-many-instance-attributes
 
     @memoize_when_activated
     def memory_info(self) -> MemoryInfo:
+        # DCMI obtains memory usage from the HBM query. Reuse its result in a
+        # snapshot so the memory fields and HBM telemetry do not each make a
+        # blocking driver call. Parser-based backends do not expose HBM
+        # telemetry, in which case keep the existing memory-info fallback.
+        hbm = self.hbm_info()
+        total = getattr(hbm, "total", NA)
+        used = getattr(hbm, "used", NA)
+        if isinstance(total, int) and isinstance(used, int):
+            return MemoryInfo(total=total, free=max(total - used, 0), used=used)
+
         info = libnvml.nvmlQuery(
             "ascendDeviceGetMemoryInfo",
             self.index,
@@ -252,13 +301,42 @@ class Device:  # pylint: disable=too-many-instance-attributes
     # 利用率
     # ------------------------------------------------------------
     @memoize_when_activated
-    def utilization_rates(self) -> UtilizationRates:
+    def _utilization_telemetry(self) -> UtilizationTelemetry:
+        """Collect the DCMI utilization group once per ``oneshot`` frame."""
+
         util = libnvml.nvmlQuery("ascendDeviceGetUtilizationRates", self.index)
-        if isinstance(util, (tuple, list)) and len(util) >= 2:
-            return UtilizationRates(npu=util[0], memory=util[1], encoder=NA, decoder=NA)
+        if not isinstance(util, (tuple, list)) or len(util) < 2:
+            return UtilizationTelemetry(NA, NA, NA, NA)
+        return UtilizationTelemetry(
+            npu=util[0],
+            memory=util[1],
+            bandwidth=getattr(util, "bandwidth", NA),
+            aicpu=getattr(util, "aicpu", NA),
+        )
+
+    @memoize_when_activated
+    def utilization_rates(self) -> UtilizationRates:
+        telemetry = self._utilization_telemetry()
+        if telemetry.npu != NA and telemetry.memory != NA:
+            dvpp = libnvml.nvmlQuery(
+                "ascendDeviceGetDvppUtilization", self.index, default=(NA, NA)
+            )
+            decoder = dvpp[0] if isinstance(dvpp, (tuple, list)) else NA
+            encoder = dvpp[1] if isinstance(dvpp, (tuple, list)) else NA
+            return UtilizationRates(
+                npu=telemetry.npu,
+                memory=telemetry.memory,
+                encoder=encoder,
+                decoder=decoder,
+            )
         return UtilizationRates(npu=NA, memory=NA, encoder=NA, decoder=NA)
 
     def npu_utilization(self) -> int | NaType:
+        """Return overall NPU utilization for DCMI, or AICore for the fallback.
+
+        The optional DCMI backend reports a device-wide NPU value; the legacy
+        ``npu-smi`` parser exposes its AICore utilization instead.
+        """
         return self.utilization_rates().npu
 
     gpu_utilization = npu_utilization
@@ -266,11 +344,108 @@ class Device:  # pylint: disable=too-many-instance-attributes
     def memory_utilization(self) -> int | NaType:
         return self.utilization_rates().memory
 
-    def encoder_utilization(self) -> int | NaType:
-        return NA
+    def memory_bandwidth_utilization(self) -> int | NaType:
+        return self._utilization_telemetry().bandwidth
+
+    def aicpu_utilization(self) -> int | NaType:
+        return self._utilization_telemetry().aicpu
+
+    @memoize_when_activated
+    def hbm_info(self) -> Any:
+        return libnvml.nvmlQuery("ascendDeviceGetHbmInfo", self.index)
+
+    def hbm_frequency(self) -> int | NaType:
+        return getattr(self.hbm_info(), "frequency", NA)
+
+    def hbm_temperature(self) -> int | NaType:
+        return getattr(self.hbm_info(), "temperature", NA)
+
+    def hbm_bandwidth_utilization(self) -> int | NaType:
+        return getattr(self.hbm_info(), "bandwidth", NA)
+
+    # Backwards-compatible alias for the original ambiguous name.
+    hbm_bandwidth = hbm_bandwidth_utilization
 
     def decoder_utilization(self) -> int | NaType:
-        return NA
+        return self.utilization_rates().decoder
+
+    def encoder_utilization(self) -> int | NaType:
+        return self.utilization_rates().encoder
+
+    @memoize_when_activated
+    def clock_infos(self) -> ClockInfos:
+        info = libnvml.nvmlQuery(
+            "ascendDeviceGetClockInfos",
+            self.index,
+            default=ClockInfos(NA, NA, NA, NA),
+        )
+        if isinstance(info, (tuple, list)) and len(info) >= 4:
+            return ClockInfos(*info[:4])
+        return ClockInfos(NA, NA, NA, NA)
+
+    clocks = clock_infos
+
+    @memoize_when_activated
+    def max_clock_infos(self) -> ClockInfos:
+        info = libnvml.nvmlQuery(
+            "ascendDeviceGetMaxClockInfos",
+            self.index,
+            default=ClockInfos(NA, NA, NA, NA),
+        )
+        if isinstance(info, (tuple, list)) and len(info) >= 4:
+            return ClockInfos(*info[:4])
+        return ClockInfos(NA, NA, NA, NA)
+
+    max_clocks = max_clock_infos
+
+    def clock_speed_infos(self) -> ClockSpeedInfos:
+        return ClockSpeedInfos(self.clock_infos(), self.max_clock_infos())
+
+    def aicore_clock(self) -> int | NaType:
+        return self.clock_infos().sm
+
+    # ``sm_clock`` is inherited from nvitop's CUDA-shaped API. Preserve it
+    # for callers while exposing the Ascend-native meaning explicitly.
+    sm_clock = aicore_clock
+
+    def max_aicore_clock(self) -> int | NaType:
+        return self.max_clock_infos().sm
+
+    max_sm_clock = max_aicore_clock
+
+    def memory_clock(self) -> int | NaType:
+        return self.clock_infos().memory
+
+    def video_clock(self) -> int | NaType:
+        return self.clock_infos().video
+
+    @memoize_when_activated
+    def pcie_throughput(self) -> ThroughputInfo:
+        info = libnvml.nvmlQuery(
+            "ascendDeviceGetPcieThroughput",
+            self.index,
+            default=ThroughputInfo(NA, NA),
+        )
+        if isinstance(info, (tuple, list)) and len(info) >= 2:
+            return ThroughputInfo(*info[:2])
+        return ThroughputInfo(NA, NA)
+
+    def pcie_tx_throughput(self) -> int | NaType:
+        return self.pcie_throughput().tx
+
+    def pcie_rx_throughput(self) -> int | NaType:
+        return self.pcie_throughput().rx
+
+    def pcie_tx_throughput_human(self) -> str | NaType:
+        value = self.pcie_tx_throughput()
+        return f"{bytes2human(value * 1024)}/s" if isinstance(value, int) else NA
+
+    def pcie_rx_throughput_human(self) -> str | NaType:
+        value = self.pcie_rx_throughput()
+        return f"{bytes2human(value * 1024)}/s" if isinstance(value, int) else NA
+
+    def total_volatile_uncorrected_ecc_errors(self) -> int | NaType:
+        return libnvml.nvmlQuery("ascendDeviceGetEccErrors", self.index)
 
     # ------------------------------------------------------------
     # 进程列表
@@ -295,10 +470,20 @@ class Device:  # pylint: disable=too-many-instance-attributes
                 try:
                     self.memory_info.cache_activate(self)        # type: ignore[attr-defined]
                     self.utilization_rates.cache_activate(self)  # type: ignore[attr-defined]
+                    self._utilization_telemetry.cache_activate(self)  # type: ignore[attr-defined]
+                    self.hbm_info.cache_activate(self)            # type: ignore[attr-defined]
+                    self.clock_infos.cache_activate(self)        # type: ignore[attr-defined]
+                    self.max_clock_infos.cache_activate(self)    # type: ignore[attr-defined]
+                    self.pcie_throughput.cache_activate(self)    # type: ignore[attr-defined]
                     yield
                 finally:
                     self.memory_info.cache_deactivate(self)      # type: ignore[attr-defined]
                     self.utilization_rates.cache_deactivate(self)  # type: ignore[attr-defined]
+                    self._utilization_telemetry.cache_deactivate(self)  # type: ignore[attr-defined]
+                    self.hbm_info.cache_deactivate(self)            # type: ignore[attr-defined]
+                    self.clock_infos.cache_deactivate(self)      # type: ignore[attr-defined]
+                    self.max_clock_infos.cache_deactivate(self)  # type: ignore[attr-defined]
+                    self.pcie_throughput.cache_deactivate(self)  # type: ignore[attr-defined]
 
     # ------------------------------------------------------------
     # 快照字段：与原 NVML 版保持一致
@@ -313,7 +498,8 @@ class Device:  # pylint: disable=too-many-instance-attributes
         "npu_utilization", "memory_utilization",
         "encoder_utilization", "decoder_utilization",
         "clock_infos", "max_clock_infos", "clock_speed_infos",
-        "sm_clock", "memory_clock", "video_clock",
+        "aicore_clock", "max_aicore_clock", "sm_clock", "max_sm_clock",
+        "memory_clock", "video_clock",
         "fan_speed", "temperature",
         "power_usage", "power_limit", "power_status",
         "pcie_throughput", "pcie_tx_throughput", "pcie_rx_throughput",

@@ -11,6 +11,7 @@ from nputop.api import MigDevice as MigDeviceBase
 from nputop.api import PhysicalDevice as DeviceBase
 from nputop.api import utilization2string
 from nputop.gui.library.process import NpuProcess
+from nputop.gui.library.utils import cut_string
 
 
 __all__ = ['Device', 'NA']
@@ -54,6 +55,20 @@ class Device(DeviceBase):
         'npu_utilization_string',
         'fan_speed_string',
         'temperature_string',
+        'max_aicore_clock',
+        'hbm_frequency',
+        'hbm_temperature',
+        'hbm_bandwidth_utilization',
+        'memory_bandwidth_utilization',
+        'aicpu_utilization',
+        'encoder_utilization',
+        'decoder_utilization',
+        'pcie_tx_throughput_human',
+        'pcie_rx_throughput_human',
+        'aicore_pcie_summary',
+        'bus_memory_summary',
+        'power_hbm_summary',
+        'npu_aux_summary',
         'memory_loading_intensity',
         'memory_display_color',
         'npu_loading_intensity',
@@ -124,6 +139,73 @@ class Device(DeviceBase):
     def temperature_string(self):  # in Celsius
         return self.temperature()
 
+    @staticmethod
+    def _token(value):
+        return '--' if value == NA else str(value)
+
+    @classmethod
+    def _rate_token(cls, value):
+        if value == NA:
+            return '--'
+        value = round(float(value))
+        return 'MAX' if value >= 100 else f'{value}%'
+
+    @staticmethod
+    def _pcie_gib_per_second(value):
+        """Format the KiB/s compatibility value as a whole GiB/s rate."""
+
+        if value == NA:
+            return '--'
+        return str(round(value / (1024 * 1024)))
+
+    def aicore_pcie_summary(self):
+        name = cut_string(self.name(), maxlen=7, padstr='..', align='left')
+        current = self._token(self.aicore_clock())
+        maximum = self._token(self.max_aicore_clock())
+        tx = self._pcie_gib_per_second(self.pcie_tx_throughput())
+        rx = self._pcie_gib_per_second(self.pcie_rx_throughput())
+        return (
+            f'{self.physical_index:>2} {name:<7} A{current:>3}/{maximum:>4} T{tx:>2}/R{rx:>2}'
+        ).ljust(29)
+
+    def bus_memory_summary(self):
+        bus_id = self.bus_id()
+        if bus_id != NA and len(bus_id) > 10 and ':' in bus_id:
+            bus_id = bus_id.split(':', 1)[1]
+        frequency = self._token(self.memory_clock())
+        return f'{bus_id:>7} M{frequency:>4}MHz'.rjust(20)
+
+    def power_hbm_summary(self):
+        fan = self._token(self.fan_speed_string())
+        temperature = self._token(self.temperature_string())
+        power_usage = self.power_usage()
+        power_limit = self.power_limit()
+        if isinstance(power_usage, int):
+            usage = str(round(power_usage / 1000))
+            limit = str(round(power_limit)) if isinstance(power_limit, int) else '--'
+        else:
+            usage = limit = '--'
+        hbm_temperature = self._token(self.hbm_temperature())
+        hbm_bandwidth = self._token(self.hbm_bandwidth_utilization())
+        return (
+            f'{fan:>3} T{temperature:>3} P{usage:>3}/{limit:<3} '
+            f'H{hbm_temperature:>2}/B{hbm_bandwidth:>2}'
+        ).ljust(29)
+
+    def npu_aux_summary(self):
+        npu = self._rate_token(self.npu_utilization())
+        aicpu = self._rate_token(self.aicpu_utilization())
+        decoder = self._rate_token(self.decoder_utilization()).replace('%', '')
+        encoder = self._rate_token(self.encoder_utilization()).replace('%', '')
+        return f'N{npu:>3} C{aicpu:>3} D{decoder:>2}/E{encoder:>2}'.ljust(20)
+
+    # These helpers describe UI data, not the backend used to obtain it.
+    # Retain aliases for third-party format strings from earlier PR revisions.
+    dcmi_aicore_pcie_summary = aicore_pcie_summary
+    dcmi_bus_hbm_summary = bus_memory_summary
+    dcmi_power_hbm_summary = power_hbm_summary
+    dcmi_npu_aux_summary = npu_aux_summary
+
     def memory_loading_intensity(self):
         return self.loading_intensity_of(self.memory_percent(), type='memory')
 
@@ -173,6 +255,3 @@ class Device(DeviceBase):
     @staticmethod
     def color_of(utilization, type='memory'):  # pylint: disable=redefined-builtin
         return Device.INTENSITY2COLOR.get(Device.loading_intensity_of(utilization, type=type))
-
-
-
