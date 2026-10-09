@@ -110,6 +110,11 @@ class Device:  # pylint: disable=too-many-instance-attributes
     # 列表/构造
     # ------------------------------------------------------------
     @classmethod
+    def all(cls) -> list[Device]:
+        """Return all enumerated Ascend devices in display-index order."""
+        return cls.from_indices()
+
+    @classmethod
     def from_indices(
         cls,
         indices: int | Iterable[int] | None = None,
@@ -204,6 +209,10 @@ class Device:  # pylint: disable=too-many-instance-attributes
 
     def is_mig_device(self) -> bool:
         return False
+
+    def mig_devices(self) -> list[Device]:
+        """Ascend devices have no NVIDIA MIG children."""
+        return []
 
     def performance_state(self) -> str | NaType:
         return "N/A"

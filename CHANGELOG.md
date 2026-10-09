@@ -4,6 +4,9 @@
 
 ### English
 
+- Restore Ascend device enumeration and process collection in the public
+  `take_snapshots` and `ResourceMetricCollector` APIs, preserving NPU metric
+  names, units and missing values.
 - Stop idle host-inspection workers after parent exit, including terminal
   disconnects. Limit idle redraws while keeping input and new data responsive.
 - Make the native dashboard the default; keep `--legacy-ui` and the
@@ -32,6 +35,8 @@
 
 ### 中文
 
+- 修复公共 `take_snapshots` 与 `ResourceMetricCollector` API 的昇腾设备枚举和
+  进程采集，保留 NPU 指标名称、单位及缺失值。
 - 父进程退出（包括终端断开）后清理空闲主机检查子进程；降低空闲重绘频率，
   保持键鼠和新数据的及时响应。
 - 新界面成为默认入口，保留 `--legacy-ui` 及 `--preview` 兼容别名；
