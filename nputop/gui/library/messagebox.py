@@ -259,6 +259,20 @@ class MessageBox(Displayable):  # pylint: disable=too-many-instance-attributes
 
 
 def send_signal(signal, panel):
+    from nputop.api.monitor import host_pid_namespace
+
+    if host_pid_namespace() is None:
+        panel.root.messagebox = MessageBox(
+            message='Cannot send signals: driver PID namespace is unverified. Read-only mode.',
+            options=[MessageBox.Option('OK', 'o', None), MessageBox.Option('Cancel', 'c', None)],
+            default=0,
+            yes=0,
+            no=1,
+            cancel=1,
+            win=panel.win,
+            root=panel.root,
+        )
+        return
     assert signal in {'terminate', 'kill', 'interrupt'}
     default = {'terminate': 0, 'kill': 1, 'interrupt': 2}.get(signal)
     processes = []

@@ -7,7 +7,6 @@
 from cachetools.func import ttl_cache
 
 from nputop.api import NA
-from nputop.api import MigDevice as MigDeviceBase
 from nputop.api import PhysicalDevice as DeviceBase
 from nputop.api import utilization2string
 from nputop.gui.library.process import NpuProcess
@@ -84,10 +83,37 @@ class Device(DeviceBase):
         self.tuple_index = (self.index,) if isinstance(self.index, int) else self.index
         self.display_index = ':'.join(map(str, self.tuple_index))
 
-    def as_snapshot(self):
-        self._snapshot = super().as_snapshot()
-        self._snapshot.tuple_index = self.tuple_index
-        self._snapshot.display_index = self.display_index
+    # These fields are only displayed in the expanded device rows. Some
+    # involve slow driver queries even when the driver returns unsupported.
+    DETAIL_SNAPSHOT_KEYS = frozenset({
+        'total_volatile_uncorrected_ecc_errors',
+        'max_aicore_clock', 'hbm_frequency', 'hbm_temperature',
+        'hbm_bandwidth_utilization', 'memory_bandwidth_utilization',
+        'aicpu_utilization', 'encoder_utilization', 'decoder_utilization',
+        'pcie_tx_throughput_human', 'pcie_rx_throughput_human',
+        'aicore_pcie_summary', 'bus_memory_summary',
+        'power_hbm_summary', 'npu_aux_summary',
+    })
+
+    def as_snapshot(self, *, compact=False):
+        keys = self.SNAPSHOT_KEYS
+        if compact:
+            keys = [key for key in keys if key not in self.DETAIL_SNAPSHOT_KEYS]
+        snapshot = super().as_snapshot(keys=keys)
+        if compact:
+            # A resize can select the full layout before the next sample.
+            # Keep its fields explicit so Snapshot cannot lazily query them
+            # from the curses thread during that transition.
+            for key in self.DETAIL_SNAPSHOT_KEYS:
+                setattr(snapshot, key, NA)
+        snapshot.tuple_index = self.tuple_index
+        snapshot.display_index = self.display_index
+        self._snapshot = snapshot
+        return snapshot
+
+    @property
+    def cached_snapshot(self):
+        """Return the latest sample without initiating device I/O."""
         return self._snapshot
 
     @property
@@ -97,18 +123,8 @@ class Device(DeviceBase):
         return self._snapshot
 
     def mig_devices(self):
-        mig_devices = []
-
-        if self.is_mig_mode_enabled():
-            for mig_index in range(self.max_mig_device_count()):
-                try:
-                    mig_device = MigDevice(index=(self.index, mig_index))
-                except libnvml.NVMLError:  # noqa: PERF203
-                    break
-                else:
-                    mig_devices.append(mig_device)
-
-        return mig_devices
+        # Preserve the compatibility method; Ascend exposes no NVIDIA MIG devices.
+        return []
 
     fan_speed = ttl_cache(ttl=5.0)(DeviceBase.fan_speed)
     temperature = ttl_cache(ttl=5.0)(DeviceBase.temperature)

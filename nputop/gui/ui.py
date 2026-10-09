@@ -132,10 +132,11 @@ class UI(DisplayableContainer):  # pylint: disable=too-many-instance-attributes
         return termsize
 
     def poke(self):
-        super().poke()
-
         if self.termsize is None:
             self.update_size()
+        # Resolve auto/compact layout before workers choose their first
+        # sampling profile on a terminal that cannot fit the full table.
+        super().poke()
 
     def draw(self):
         if self.need_redraw:

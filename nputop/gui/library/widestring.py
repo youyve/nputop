@@ -150,7 +150,7 @@ class WideString:  # pylint: disable=too-few-public-methods,wrong-spelling-in-do
                 return WideString(' ' + ''.join(self.chars[start : stop - 1]) + ' ')
             return WideString(''.join(self.chars[start : stop - 1]) + ' ')
         if self.chars[start] == '':
-            return WideString(' ' + ''.join(self.chars[start : stop - 1]))
+            return WideString(' ' + ''.join(self.chars[start:stop]))
         return WideString(''.join(self.chars[start:stop]))
 
     def __len__(self):
@@ -181,7 +181,7 @@ class WideString:  # pylint: disable=too-few-public-methods,wrong-spelling-in-do
         <WideString 'poo'>
         >>> WideString('poo').rjust(5)
         <WideString '  poo'>
-        >>> WideString('モヒカン').rljust(10)
+        >>> WideString('モヒカン').rjust(10)
         <WideString '  モヒカン'>
         """
         if width > len(self):

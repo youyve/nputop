@@ -7,8 +7,8 @@
 import argparse
 import curses
 import os
+import subprocess
 import sys
-import textwrap
 
 from nputop.api import HostProcess
 from nputop.gui import UI, USERNAME, Device, colored, libcurses, set_color, setlocale_utf8
@@ -43,7 +43,7 @@ def parse_arguments() -> argparse.Namespace:
 
     parser = argparse.ArgumentParser(
         prog='nputop',
-        description='An interactive NVIDIA-NPU process viewer.',
+        description='An interactive Ascend-NPU process viewer (legacy UI).',
         formatter_class=argparse.RawTextHelpFormatter,
         add_help=False,
     )
@@ -271,7 +271,23 @@ def parse_arguments() -> argparse.Namespace:
 
 # pylint: disable-next=too-many-branches,too-many-statements,too-many-locals
 def main() -> int:
-    """Main function for ``nputop`` CLI."""
+    """Launch the native dashboard, with an explicit legacy UI fallback."""
+    argv = [arg for arg in sys.argv[1:] if arg not in ('--preview', '--legacy-ui')]
+    if '--legacy-ui' not in sys.argv[1:]:
+        from nputop.preview import main as native_main
+
+        return native_main(argv)
+    original = sys.argv
+    try:
+        sys.argv = [original[0]] + argv
+        return legacy_main()
+    finally:
+        sys.argv = original
+
+
+# pylint: disable-next=too-many-branches,too-many-statements,too-many-locals
+def legacy_main() -> int:
+    """Run the original dashboard without changing its Python API."""
     args = parse_arguments()
 
     if args.force_color:
@@ -299,11 +315,16 @@ def main() -> int:
 
     try:
         device_count = Device.count()
-    except libnvml.NVMLError_LibraryNotFound:
-        return 1
-    except libnvml.NVMLError as ex:
+    except (OSError, RuntimeError, subprocess.SubprocessError) as ex:
         print(
-            '{} {}'.format(colored('NVML ERROR:', color='red', attrs=('bold',)), ex),
+            '{} {}'.format(colored('NPU ERROR:', color='red', attrs=('bold',)), ex),
+            file=sys.stderr,
+        )
+        return 1
+
+    if not device_count:
+        print(
+            'NPU ERROR: No accessible Ascend NPU devices; check the driver, permissions and npu-smi.',
             file=sys.stderr,
         )
         return 1

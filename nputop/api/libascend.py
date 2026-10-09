@@ -35,11 +35,9 @@ ULONGLONG_MAX : int  = 0xFFFFFFFFFFFFFFFF
 _CACHE      : dict[int, dict[str,Any]] = {}   # 物理 id ↦ 数据
 _IDX        : list[int] = []                  # 逻辑 index ↦ 物理 id
 _CACHE_TTL  = 0.8
-# Query timeout in seconds: keep the original 3s default (also on detection
-# failure), and use 10s when the chip mapping identifies an Ascend950 (A5).
 _DEFAULT_SMI_TIMEOUT = 3.0
 _A5_SMI_TIMEOUT = 10.0
-_SMI_TIMEOUT: float | None = None
+_SMI_TIMEOUT = None
 _cache_ts   = 0.0
 _CACHE_LOCK = threading.RLock()
 _DRIVER_VERSION = None
@@ -56,6 +54,7 @@ _POWER_LIMIT = {
     "910C": 350,
 }
 _npu_chip_phy : dict[tuple[int, int], int] = {} # (npu id, chip_id) ↦ phy id
+_PROC_CONTAINER_PIDS = {}  # (card, chip, driver PID) -> reported container PID
 _DCMI_BACKEND = None
 _DCMI_ATTEMPTED = False
 # --------- Regex ----------
@@ -107,7 +106,6 @@ def _reset_dcmi_backend() -> None:
     _DCMI_ATTEMPTED = False
     _DCMI_BACKEND = None
 
-
 def _smi_timeout() -> float:
     """Detect A5 once before the first full query, preserving the legacy timeout."""
     global _SMI_TIMEOUT
@@ -144,7 +142,7 @@ def _update_cache(raw: str = None) -> None:
 
         if not raw:
             raw = subprocess.run(
-                ["npu-smi","info"], text=True, capture_output=True, timeout=_smi_timeout()
+                ["npu-smi","info"], text=True, capture_output=True, timeout=_smi_timeout(), check=True
             ).stdout
         raw = raw.splitlines()
 
@@ -152,6 +150,8 @@ def _update_cache(raw: str = None) -> None:
         chip_phy: dict[tuple[int, int], int] = {}
         id_only = False
         process_id_only = False
+        container_column = None
+        container_pids = {}
         
         raw_iter = iter(raw)
         for ln in raw_iter:
@@ -168,6 +168,8 @@ def _update_cache(raw: str = None) -> None:
                 continue
             if len(columns) > 1 and columns[1] == 'Process id':
                 process_id_only = columns[0] == 'NPU ID'
+                if 'Process id in container' in columns:
+                    container_column = columns.index('Process id in container')
                 continue
 
             m1 = (_RE_ID_L1 if id_only else _RE_L1).match(ln)
@@ -235,6 +237,10 @@ def _update_cache(raw: str = None) -> None:
                     chip_id = 0
                 else:
                     npu_id, chip_id, pid, mem = map(int, mp.groups())
+                if container_column is not None and container_column < len(columns):
+                    container_pid = columns[container_column]
+                    if container_pid.isdigit() and int(container_pid) > 0:
+                        container_pids[(npu_id, chip_id, pid)] = int(container_pid)
                 phy_id = chip_phy.get((npu_id, chip_id))
                 if phy_id is None:
                     continue
@@ -244,12 +250,14 @@ def _update_cache(raw: str = None) -> None:
         for d in data.values():
             d.setdefault("power", NA); d.setdefault("temp", NA)
             d.setdefault("aicore", NA)
-            d.setdefault("hbm_used", 0); d.setdefault("hbm_total", 0)
+            d.setdefault("hbm_used", NA); d.setdefault("hbm_total", NA)
             d.setdefault("procs", [])
             mem_pct = (round(100*d["hbm_used"]/d["hbm_total"],1)
-                       if d["hbm_total"] else NA)
+                       if isinstance(d["hbm_total"], (int, float)) and d["hbm_total"] > 0
+                       and isinstance(d["hbm_used"], (int, float)) else NA)
             d["util"] = Util(d["aicore"], mem_pct, NA, NA)
 
+        _PROC_CONTAINER_PIDS.clear(); _PROC_CONTAINER_PIDS.update(container_pids)
         _CACHE.clear(); _CACHE.update(data)
         _IDX.clear();   _IDX.extend(sorted(_CACHE.keys()))
         _npu_chip_phy.clear(); _npu_chip_phy.update(chip_phy)
@@ -446,6 +454,8 @@ def ascendDeviceGetMemoryInfo(i:int):
     if id is None: return MemInfo(0,0,0)
     d=_CACHE.get(id,{})
     tot=d.get("hbm_total",0); used=d.get("hbm_used",0)
+    if not isinstance(tot, (int, float)) or not isinstance(used, (int, float)):
+        return MemInfo(NA, NA, NA)
     return MemInfo(tot, tot-used, used)
 
 

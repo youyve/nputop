@@ -46,6 +46,7 @@ DCMI_FAN_MAX_RPM = 18000
 
 # DCMI utilization-rate selectors from dcmi_interface_api.h.
 DCMI_UTILIZATION_RATE_DDR = 1
+DCMI_UTILIZATION_RATE_AICORE = 2
 DCMI_UTILIZATION_RATE_AICPU = 3
 DCMI_UTILIZATION_RATE_HBM = 6
 DCMI_UTILIZATION_RATE_HBM_BANDWIDTH = 10
@@ -80,6 +81,15 @@ class DcmiUnavailable(RuntimeError):
     """Raised when DCMI cannot be initialized or enumerate devices."""
 
 
+class DcmiQueryError(RuntimeError):
+    """A failed query, distinct from a successful empty result."""
+
+    def __init__(self, function, code):
+        self.function = function
+        self.code = code
+        super().__init__(f'{function}: return code {code}')
+
+
 class _DeviceRef:
     __slots__ = ("index", "card_id", "chip_id")
 
@@ -106,6 +116,10 @@ class _ChipInfoV2(ctypes.Structure):
         ("aicore_cnt", ctypes.c_uint),
         ("npu_name", ctypes.c_ubyte * MAX_CHIP_NAME_LEN),
     ]
+
+
+class _RatedPowerInfo(ctypes.Structure):
+    _fields_ = [("soc_rated_power", ctypes.c_uint), ("reserved", ctypes.c_ubyte * 32)]
 
 
 class _PcieInfoV2(ctypes.Structure):
@@ -319,6 +333,8 @@ class DcmiBackend:
     def _configure(self) -> None:
         signatures = {
             "dcmi_init": [],
+            "dcmi_get_device_logic_id": [ctypes.POINTER(ctypes.c_int), ctypes.c_int, ctypes.c_int],
+            "dcmi_get_device_phyid_from_logicid": [ctypes.c_uint, ctypes.POINTER(ctypes.c_uint)],
             "dcmi_get_card_num_list": [
                 ctypes.POINTER(ctypes.c_int),
                 ctypes.POINTER(ctypes.c_int),
@@ -383,6 +399,20 @@ class DcmiBackend:
                 ctypes.c_int,
                 ctypes.c_int,
                 ctypes.POINTER(ctypes.c_int),
+            ],
+            "dcmi_mcu_get_power_info": [ctypes.c_int, ctypes.POINTER(ctypes.c_int)],
+            "dcmi_get_device_board_id": [
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.POINTER(ctypes.c_uint),
+            ],
+            "dcmi_get_device_info": [
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_uint,
+                ctypes.c_void_p,
+                ctypes.POINTER(ctypes.c_uint),
             ],
             "dcmi_get_device_frequency": [
                 ctypes.c_int,
@@ -499,6 +529,58 @@ class DcmiBackend:
             return None
         ret = self._call(name, ref.card_id, ref.chip_id, ctypes.byref(structure))
         return structure if ret == DCMI_OK else None
+
+    def device_ids(self, index):
+        """Optional identity mapping; never infer IDs from inventory position."""
+        ref = self._device(index)
+        result = {'logical_id': None, 'chip_physical_id': None, 'id_source': None}
+        if ref is None:
+            return result
+        logical = ctypes.c_int(-1)
+        if self._call('dcmi_get_device_logic_id', ctypes.byref(logical), ref.card_id, ref.chip_id) == DCMI_OK and logical.value >= 0:
+            result.update(logical_id=logical.value, id_source='dcmi')
+            physical = ctypes.c_uint(0xFFFFFFFF)
+            if self._call('dcmi_get_device_phyid_from_logicid', logical.value, ctypes.byref(physical)) == DCMI_OK and physical.value != 0xFFFFFFFF:
+                result['chip_physical_id'] = physical.value
+        return result
+
+    def board_id(self, index):
+        value = ctypes.c_uint(0xFFFFFFFF)
+        if self._struct('dcmi_get_device_board_id', index, value) is not None:
+            return value.value if value.value != 0xFFFFFFFF else None
+        return None
+
+    def rated_power_info(self, index):
+        """Return the raw optional LP reading; do not claim its unit or scope."""
+        ref = self._device(index)
+        info = _RatedPowerInfo()
+        size = ctypes.c_uint(ctypes.sizeof(info))
+        code = None
+        if ref is not None:
+            code = self._call(
+                'dcmi_get_device_info',
+                ref.card_id,
+                ref.chip_id,
+                8,  # DCMI_MAIN_CMD_LP
+                10,  # DCMI_LP_SUB_CMD_GET_POWER_INFO
+                ctypes.byref(info),
+                ctypes.byref(size),
+            )
+        state = 'ok'
+        if code != DCMI_OK:
+            state = {
+                None: 'unsupported', -8013: 'unsupported', -8255: 'unsupported',
+                -8002: 'permission', -8006: 'timeout',
+            }.get(code, 'error')
+        elif size.value != ctypes.sizeof(info):
+            state = 'invalid-size'
+        return {
+            'function': 'dcmi_get_device_info:LP/GET_POWER_INFO',
+            'code': code,
+            'size': size.value,
+            'raw': info.soc_rated_power if state == 'ok' else None,
+            'state': state,
+        }
 
     def count(self) -> int:
         return len(self._devices)
@@ -832,9 +914,20 @@ class DcmiBackend:
         # DCMI reports 0.1 W; nputop's compatibility API reports mW.
         return int(value.value) * 100 if ret == DCMI_OK and value.value >= 0 else NA
 
-    def process_info(self, index: int) -> tuple[ProcessInfo, ...]:
+    def mcu_power_usage(self, index: int) -> int | str:
+        """310P card power in mW; the optional MCU API returns tenths of a watt."""
+        ref = self._device(index)
+        if ref is None:
+            return NA
+        value = ctypes.c_int(-1)
+        ret = self._call("dcmi_mcu_get_power_info", ref.card_id, ctypes.byref(value))
+        return int(value.value) * 100 if ret == DCMI_OK and value.value >= 0 else NA
+
+    def process_info(self, index: int, *, strict=False) -> tuple[ProcessInfo, ...]:
         ref = self._device(index)
         if ref is None or "dcmi_get_device_resource_info" not in self._functions:
+            if strict:
+                raise DcmiQueryError('dcmi_get_device_resource_info', None)
             return ()
         entries = (_ProcMemInfo * MAX_PROC_NUM_IN_DEVICE)()
         count = ctypes.c_int()
@@ -846,6 +939,8 @@ class DcmiBackend:
             ctypes.byref(count),
         )
         if ret != DCMI_OK:
+            if strict:
+                raise DcmiQueryError('dcmi_get_device_resource_info', ret)
             return ()
         size = max(0, min(int(count.value), MAX_PROC_NUM_IN_DEVICE))
         return tuple(

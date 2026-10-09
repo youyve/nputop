@@ -104,6 +104,12 @@ class Selection:  # pylint: disable=too-many-instance-attributes
         return ()
 
     def foreach(self, func):
+        # Legacy UI actions must obey the same PID namespace safety boundary.
+        from nputop.api.monitor import host_pid_namespace
+
+        if host_pid_namespace() is None:
+            self.clear()
+            return
         flag = False
         for process in self.processes():
             try:

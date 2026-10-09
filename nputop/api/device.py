@@ -110,6 +110,11 @@ class Device:  # pylint: disable=too-many-instance-attributes
     # 列表/构造
     # ------------------------------------------------------------
     @classmethod
+    def all(cls) -> list[Device]:
+        """Return all enumerated Ascend devices in display-index order."""
+        return cls.from_indices()
+
+    @classmethod
     def from_indices(
         cls,
         indices: int | Iterable[int] | None = None,
@@ -204,6 +209,10 @@ class Device:  # pylint: disable=too-many-instance-attributes
 
     def is_mig_device(self) -> bool:
         return False
+
+    def mig_devices(self) -> list[Device]:
+        """Ascend devices have no NVIDIA MIG children."""
+        return []
 
     def performance_state(self) -> str | NaType:
         return "N/A"
@@ -337,12 +346,12 @@ class Device:  # pylint: disable=too-many-instance-attributes
         The optional DCMI backend reports a device-wide NPU value; the legacy
         ``npu-smi`` parser exposes its AICore utilization instead.
         """
-        return self.utilization_rates().npu
+        return self._utilization_telemetry().npu
 
     gpu_utilization = npu_utilization
 
     def memory_utilization(self) -> int | NaType:
-        return self.utilization_rates().memory
+        return self._utilization_telemetry().memory
 
     def memory_bandwidth_utilization(self) -> int | NaType:
         return self._utilization_telemetry().bandwidth
@@ -510,9 +519,9 @@ class Device:  # pylint: disable=too-many-instance-attributes
         "compute_mode", "cuda_compute_capability",
     ]
 
-    def as_snapshot(self) -> Snapshot:
+    def as_snapshot(self, *, keys=None) -> Snapshot:
         with self.oneshot():
-            data = {k: getattr(self, k)() for k in self.SNAPSHOT_KEYS}
+            data = {k: getattr(self, k)() for k in (self.SNAPSHOT_KEYS if keys is None else keys)}
             return Snapshot(
                 real=self,
                 index=self.index,

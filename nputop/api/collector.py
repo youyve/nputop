@@ -31,7 +31,7 @@ from typing import Callable, ClassVar, Generator, Iterable, NamedTuple, TypeVar
 from weakref import WeakSet
 
 from nputop.api import host
-from nputop.api.device import CudaDevice, Device
+from nputop.api.device import Device
 from nputop.api.process import NpuProcess, HostProcess
 from nputop.api.utils import GiB, MiB, Snapshot
 
@@ -52,6 +52,14 @@ _T = TypeVar('_T')
 
 def _unique(iterable: Iterable[_T]) -> list[_T]:
     return list(OrderedDict.fromkeys(iterable).keys())
+
+
+def _metric_value(value: float | int | str | None, unit: float | int) -> float:
+    """Keep unavailable driver values missing in numeric collection output."""
+    try:
+        return float(value) / unit
+    except (TypeError, ValueError):
+        return math.nan
 
 
 # pylint: disable-next=too-many-branches
@@ -384,7 +392,7 @@ class ResourceMetricCollector:  # pylint: disable=too-many-instance-attributes
         # Host resource metrics
         ('cpu_percent', 'host', 'cpu_percent (%)', 1.0),
         ('host_memory', 'host', 'host_memory (MiB)', MiB),
-        ('host_memory_percent', 'host', 'host_memory_percent (%)', 1.0),
+        ('memory_percent', 'host', 'host_memory_percent (%)', 1.0),
         ('running_time_in_seconds', 'host', 'running_time (min)', 60.0),
         # NPU memory metrics
         ('npu_memory', None, 'npu_memory (MiB)', MiB),
@@ -426,9 +434,10 @@ class ResourceMetricCollector:  # pylint: disable=too-many-instance-attributes
                 self.leaf_devices.append(device)
 
         self.root_pids: set[int] = root_pids
-        self._positive_processes: WeakSet[HostProcess] = WeakSet(
-            HostProcess(pid) for pid in self.root_pids
-        )
+        # Keep root identities alive; both the process cache and membership
+        # cache use weak references and otherwise lose newly created roots.
+        self._root_processes = tuple(HostProcess(pid) for pid in self.root_pids)
+        self._positive_processes: WeakSet[HostProcess] = WeakSet(self._root_processes)
         self._negative_processes: WeakSet[HostProcess] = WeakSet()
 
         self._last_timestamp: float = timer() - 2.0 * self.interval
@@ -668,7 +677,9 @@ class ResourceMetricCollector:  # pylint: disable=too-many-instance-attributes
 
     def __del__(self) -> None:
         """Clean up the demon thread on destruction."""
-        self._daemon_running.clear()
+        running = getattr(self, '_daemon_running', None)
+        if running is not None:
+            running.clear()
 
     # pylint: disable-next=too-many-branches,too-many-locals,too-many-statements
     def take_snapshots(self) -> SnapshotResult:
@@ -734,12 +745,10 @@ class ResourceMetricCollector:  # pylint: disable=too-many-instance-attributes
         device_identifiers = {}
         for device_snapshot in device_snapshots:
             identifier = f'npu:{device_snapshot.index}'
-            if isinstance(device_snapshot.real, CudaDevice):
-                identifier = f'cuda:{device_snapshot.cuda_index} ({identifier})'
             device_identifiers[device_snapshot.real] = identifier
 
             for attr, name, unit in self.DEVICE_METRICS:
-                value = float(getattr(device_snapshot, attr)) / unit
+                value = _metric_value(getattr(device_snapshot, attr), unit)
                 metrics[f'{identifier}/{name}'] = value
 
         for process_snapshot in npu_process_snapshots:
@@ -748,7 +757,7 @@ class ResourceMetricCollector:  # pylint: disable=too-many-instance-attributes
 
             for attr, scope, name, unit in self.PROCESS_METRICS:
                 scope = scope or device_identifier
-                value = float(getattr(process_snapshot, attr)) / unit
+                value = _metric_value(getattr(process_snapshot, attr), unit)
                 metrics[f'{identifier}/{scope}/{name}'] = value
 
         with self._lock:

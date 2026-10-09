@@ -1,0 +1,12 @@
+include LICENSE COPYING NOTICE
+include README.md README_zh.md CHANGELOG.md
+prune assets
+prune docs
+prune tools
+include assets/nputop-910c.png
+include docs/compatibility.md docs/power.md docs/power_zh.md
+include docs/development.md docs/publishing.md
+recursive-include tests *.py
+include tools/acceptance.py tools/check_install.py tools/check_distribution.py
+include tools/prepare_conda_recipe.py
+global-exclude __pycache__ *.py[cod]
