@@ -101,6 +101,18 @@ respective registries automatically; download counts are not unique-user counts.
 
 三者均应输出 `nputop 0.1.0`。版本与下载量徽章自动跟踪对应渠道；下载次数不等于独立用户数。
 
+## Community follow-up / 社区回应
+
+Credit contributors with links to their PRs in both languages of the release
+notes. Reply to relevant issues with the released version and specific fix or
+remaining limitation; distinguish upstream hardware reports from maintainer
+validation. Read existing comments first to avoid duplicate notifications.
+Keep drafts and raw validation records outside the public repository.
+
+中英文发布说明同步致谢贡献者并关联 PR。对相关 issue 说明已发布版本、具体修复或
+仍存在的限制；区分贡献者的实机报告与维护方验证。发送前核对已有评论，避免重复通知。
+草稿与原始验证记录保留在公开仓库外。
+
 References / 参考：[conda-forge updates](https://conda-forge.org/docs/maintainer/updating_pkgs/),
 [uv tool packages](https://docs.astral.sh/uv/guides/tools/#commands-with-different-package-names),
 [uv's default index](https://docs.astral.sh/uv/concepts/indexes/).
