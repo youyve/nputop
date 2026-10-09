@@ -1,0 +1,57 @@
+name: Tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.7', '3.8', '3.9', '3.10', '3.11', '3.12', '3.13', '3.14']
+        dependencies: [current]
+        include:
+          - python: '3.7'
+            dependencies: minimum
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - if: matrix.dependencies == 'current'
+        run: python -m pip install pytest build psutil cachetools termcolor
+      - if: matrix.dependencies == 'minimum'
+        run: python -m pip install build 'pytest==7.4.4' 'psutil==5.6.6' 'cachetools==1.0.1' 'termcolor==1.0.0'
+      - name: Build wheel from sdist and validate contents
+        run: |
+          python -m build
+          python tools/check_distribution.py dist/*.whl dist/*.tar.gz
+      - run: python -m compileall -q nputop tests
+      - name: Install the artifact and copy only tests/tools outside the checkout
+        run: |
+          python -m pip install --no-deps dist/*.whl
+          cp -R tests tools "$RUNNER_TEMP/"
+      - name: Run regressions against the installed wheel
+        working-directory: ${{ runner.temp }}
+        env:
+          PYTHONPATH: ${{ runner.temp }}/tests
+        run: |
+          python -m pytest -q tests
+          python tools/check_install.py --expected-root "$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')" --console "$(command -v nputop)" --no-driver --output installed.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: installed-${{ matrix.python }}-${{ matrix.dependencies }}
+          path: ${{ runner.temp }}/installed.json
+          if-no-files-found: ignore
+  metadata:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install build twine
+      - run: python -m build
+      - run: python tools/check_distribution.py dist/*.whl dist/*.tar.gz
+      - run: python -m twine check dist/*

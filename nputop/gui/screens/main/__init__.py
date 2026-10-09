@@ -33,6 +33,7 @@ class MainScreen(DisplayableContainer):  # pylint: disable=too-many-instance-att
 
         self.devices = devices
         self.device_count = len(self.devices)
+        self._waiting_for_devices = self.device_count > 0
 
         self.snapshot_lock = threading.Lock()
 
@@ -138,6 +139,13 @@ class MainScreen(DisplayableContainer):  # pylint: disable=too-many-instance-att
     def poke(self):
         super().poke()
 
+        waiting = self.device_count > 0 and not self.device_panel.snapshots
+        if waiting != self._waiting_for_devices:
+            self._waiting_for_devices = waiting
+            # Erase the loading message and paint the table with its first
+            # complete sample in the same curses refresh.
+            self.need_redraw = True
+
         height = self.device_panel.height + self.host_panel.height + self.process_panel.height
         if self.height != height:
             self.update_size()
@@ -145,6 +153,13 @@ class MainScreen(DisplayableContainer):  # pylint: disable=too-many-instance-att
 
     def draw(self):
         self.color_reset()
+
+        if self._waiting_for_devices:
+            self.addstr(
+                self.root.y, self.root.x,
+                'nputop: Collecting device metrics... (q to quit)',
+            )
+            return
 
         super().draw()
 

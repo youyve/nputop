@@ -1,164 +1,165 @@
-# nputop：交互式 Ascend NPU 进程查看器 🚀
+# nputop
 
-[![Python Versions](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
-[![PyPI](https://img.shields.io/badge/-PyPI-informational?logo=pypi)![PyPI Downloads](https://static.pepy.tech/badge/ascend-nputop)](https://pepy.tech/project/ascend-nputop)
+**昇腾 NPU 的运行状态，一目了然。**
+
+面向终端的交互式 NPU 与进程监控工具。延续
+[nvitop](https://github.com/XuehaiPan/nvitop) 的操作习惯，结合昇腾卡／芯片拓扑，
+在一个界面中查看实时负载、资源趋势和进程状态。
+
+[![PyPI](https://img.shields.io/pypi/v/ascend-nputop?logo=pypi&logoColor=white)](https://pypi.org/project/ascend-nputop/)
+[![Conda](https://img.shields.io/conda/vn/conda-forge/nputop?logo=anaconda&logoColor=white)](https://anaconda.org/conda-forge/nputop)
+[![Python](https://img.shields.io/badge/python-3.7%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-Apache%202.0%20%26%20GPLv3-blue)](https://github.com/youyve/nputop/blob/main/NOTICE)
+
+[![PyPI Downloads](https://static.pepy.tech/badge/ascend-nputop)](https://pepy.tech/project/ascend-nputop)
 [![Conda Downloads](https://img.shields.io/conda/dn/conda-forge/nputop?label=Conda%20downloads&logo=anaconda&color=orange)](https://anaconda.org/conda-forge/nputop)
-![Platform](https://img.shields.io/badge/platform-linux-green)
-[![GitHub Repo Stars](https://img.shields.io/github/stars/youyve/nputop?label=stars&logo=github&color=brightgreen)](https://github.com/youyve/nputop/stargazers)
-[![License](https://img.shields.io/badge/license-Apache%202.0%20%7C%20GPLv3-blue.svg)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/youyve/nputop?label=Stars&logo=github)](https://github.com/youyve/nputop/stargazers)
 
----
+[English](README.md) · **简体中文** · [安装](#安装) · [使用](#使用) · [支持的设备](#支持的设备) · [更新日志](CHANGELOG.md)
 
-`nputop` 是一个专为监控和管理运行在 **Ascend NPU** 上的进程设计的**交互式命令行工具**。受流行的 [nvitop](https://github.com/XuehaiPan/nvitop) 项目的启发，`nputop` 为 Ascend NPU 生态系统带来了类似的直观用户体验，提供利用率、内存使用情况、温度、功耗等的实时洞察。
+[![nputop 在运行 vLLM 任务的八卡十六芯片昇腾 910C 服务器上的实机界面](https://raw.githubusercontent.com/youyve/nputop/main/assets/nputop-910c.png)](https://raw.githubusercontent.com/youyve/nputop/main/assets/nputop-910c.png)
 
----
+*昇腾 910C · 8 卡 / 16 芯片 · DCMI · 完整视图。点击查看原始截图。*
 
-## 🌟 主要功能
+## 为什么选择 nputop？
 
-* **实时监控**：跟踪 NPU 使用率、内存状态、温度和功耗。
-* **交互式界面**：使用键盘/鼠标导航，轻松管理进程。
-* **进程管理**：直接查看、选择和交互运行中的 NPU 进程。
-* **多 NPU 支持**：同时高效管理多个 Ascend NPU。
-* **命令行便利**：最小化设置，轻松集成到终端工作流中。
+- **整机状态，一屏掌握。** 同时查看 NPU 内存、AICore、利用率、温度、功耗、
+  时钟与带宽，以及 CPU、RAM、SWAP 历史趋势。
+- **从负载找到进程。** 点击进程即可加亮关联芯片，继续查看进程树、资源历史或
+  环境变量，并在同一界面管理进程。
+- **贴合昇腾硬件。** 适配单／多芯片卡、运行时逻辑编号、310P 内存接口和
+  910C 双 die 拓扑。
+- **熟悉的操作习惯。** 支持键盘与鼠标、完整／紧凑布局、浅色终端、渐变配色和
+  ASCII 字符。
+- **交互保持流畅。** DCMI 在独立进程中采集；主后端异常时自动回退到
+  `npu-smi`，继续提供监控。
 
----
+## 安装
 
-## 📸 截图
+需要 **Python 3.7+**、Linux 和已安装的昇腾驱动。
+无需安装 PyACL 或 NVIDIA NVML Python 包。
 
-![](assets/nputop0514_3.png)
-
-![](assets/ascend-npu.png)
-
----
-
-## ⚙️ 安装
-
-**前置条件：**
-
-* Python ≥ 3.9
-* Ascend NPU 驱动程序（[Ascend NPU 驱动](https://www.hiascend.com/hardware/firmware-drivers/community)）
-
-如果你使用的是 Conda，推荐通过 [conda-forge](https://anaconda.org/conda-forge/nputop) 安装：
+### PyPI
 
 ```bash
-# 方式一：直接指定 conda-forge 频道安装
+python -m pip install --upgrade ascend-nputop
+```
+
+### Conda
+
+通过 [conda-forge](https://anaconda.org/conda-forge/nputop) 安装：
+
+```bash
 conda install -c conda-forge nputop
-
-# 方式二（推荐）：将 conda-forge 设置为默认优先频道
-conda config --add channels conda-forge
-conda config --set channel_priority strict
-
-# 然后安装
-conda install nputop
 ```
 
-或者，如果你喜欢使用 pip，可以直接从 PyPI 安装：
+### uv
+
+在独立环境中直接运行，不占用项目环境：
+
 ```bash
-pip install ascend-nputop
+uvx --from ascend-nputop nputop
 ```
 
-如需开发或本地可编辑安装：
+也可以安装为长期使用的命令：
+
+```bash
+uv tool install --upgrade ascend-nputop
+```
+
+PyPI／uv 包名为 `ascend-nputop`，Conda 包名为 `nputop`，启动命令均为
+`nputop`。[uv 默认使用 PyPI](https://docs.astral.sh/uv/concepts/indexes/)，
+获取的是同一个已发布安装包。
+
+<details>
+<summary>从源码安装</summary>
 
 ```bash
 git clone https://github.com/youyve/nputop.git
 cd nputop
-pip install -e .
+python -m pip install -e .
 ```
 
----
+</details>
 
-## 🚀 快速开始
-
-直接从终端启动 `nputop`：
+## 使用
 
 ```bash
 nputop
 ```
 
-**贴士：** 你可以通过 [`uvx`](https://docs.astral.sh/uv/guides/tools) 或 [`pipx`](https://pypa.github.io/pipx) 启动，它会自动处理环境设置和隔离。可以将以下别名添加到你的 shell 配置文件中：
+默认按终端大小自动布局，也可根据需要调整：
 
 ```bash
-# uvx
-echo 'alias nputop="uvx --from ascend-nputop nputop"' >> ~/.bashrc
-# pipx
-echo 'alias nputop="pipx run --spec ascend-nputop nputop"' >> ~/.bashrc
+nputop --monitor full
+nputop --only 0 2
+nputop --user
+nputop --interval 1
+nputop --light --colorful
+nputop --readonly
 ```
 
-设置环境变量（`ASCEND_RT_VISIBLE_DEVICES`）以限制可见的 NPU。
+默认刷新间隔为两秒。`--only` 按显示编号筛选；按运行时逻辑编号筛选可使用
+`ASCEND_RT_VISIBLE_DEVICES=0 nputop --only-visible`。
 
----
+| 操作 | 按键 |
+| --- | --- |
+| 帮助／退出 | `h` / `q` |
+| 选择／取消选择 | 鼠标点击或 ↑↓ / Esc 或点击进程行以外的区域 |
+| 自动／完整／紧凑布局 | `a` / `f` / `c` |
+| 进程树／资源历史／环境变量 | `t` / Enter / `e` |
+| 设备详情／标记进程 | `d` / 空格 |
+| 切换排序／反转顺序 | `s` / `/` |
+| 强制结束／终止／中断进程 | `k` / `T` / `I` 或 Ctrl-C |
 
-## 🔑 使用方法与快捷键
+发送信号前必须选中或标记目标，并经过确认。
+TUI 内 Ctrl-C 请求 SIGINT；退出请用 `q`。
 
-* 切换屏幕：<kbd>↑</kbd> <kbd>↓</kbd> or <kbd>TAB</kbd>
-* 切换紧凑模式：<kbd>C</kbd>
-* 终止进程：选择一个进程并按 <kbd>K</kbd>
-* 手动刷新：<kbd>R</kbd>
-* 退出：<kbd>Q</kbd> 或 <kbd>Ctrl</kbd>+<kbd>C</kbd>
+<details>
+<summary>后端、报告与兼容选项</summary>
 
----
-
-## 🛠️ 项目结构
-
-```
-nputop
-├── assets/             # 文档用图片
-├── nputop/
-│   ├── api/            # Ascend NPU API 和后端
-│   ├── gui/            # 交互式界面（仅限 GPL-3.0）
-│   ├── cli.py          # 命令行入口
-│   └── version.py      # 版本和元数据
-├── COPYING             # GPL-3.0 许可证文件
-├── LICENSE             # Apache 2.0 许可证文件
-├── NOTICE              # 致谢和声明
-├── pyproject.toml      # 项目配置
-├── setup.py            # 构建脚本
-└── README.md           # 文档
+```bash
+nputop --backend dcmi
+nputop --backend smi
+nputop --once
+nputop --json
+nputop --diagnose > nputop-diagnostics.json
+nputop --ascii
+nputop --legacy-ui
+nputop --help
 ```
 
----
+自动模式优先 DCMI，异常时回退 `npu-smi`；显式指定后端时不切换。
+0.1.0 默认使用新界面，`--legacy-ui` 保留旧界面，`--preview` 保留为兼容别名。
 
-## 📋 已知问题与路线图
+</details>
 
-* 🚧 **对 Ascend 的支持有限**：目前仅完全支持 Ascend 910 系列。
-* 🚧 某些NPU指标的参数显示还不完整。
+## 支持的设备
 
-这些性能问题和功能差距正在持续开发中积极解决。热烈欢迎贡献以帮助改进 `nputop`。
+- **昇腾 910B**
+- **昇腾 910C / Atlas A3**，支持双 die 卡
+- **昇腾 310P**
+- **昇腾 310B**，通过 `npu-smi` 后端
 
----
+具体可用指标取决于设备和驱动，型号适配说明见[设备兼容性文档](docs/compatibility.md)。
 
-## 🤝 贡献
+<a id="power-estimation"></a>
+AICore 与 UTL 使用不同计数器；310P 回退到 AICore 时标注 `UTL*`。
+功耗参考值标注 `Ref`，双 die 设备按卡归组显示功耗。
+详见[功耗来源与读数说明](docs/power_zh.md)。
 
-我们热烈欢迎贡献！您可以：
+## 参与贡献
 
-* 通过 [Issues](https://github.com/youyve/nputop/issues) 报告错误或请求功能。
-* Fork 仓库并提交拉取请求。
-* 改进文档和示例。
+欢迎提交问题、设备反馈和改进。可在
+[Issues](https://github.com/youyve/nputop/issues) 中附上型号和驱动版本；
+`nputop --diagnose` 生成的报告不包含进程 PID、命令或环境变量内容。
 
----
+开发与硬件检查见[贡献指南](docs/development.md)，
+版本维护见 [PyPI / Conda / uv 发布指南](docs/publishing.md)。
 
-## 📃 许可证
+## 许可证与致谢
 
-本项目（`nputop`）衍生自原始项目 [`nvitop`](https://github.com/XuehaiPan/nvitop)，作者为Xuehai Pan。
-
-适用的许可证为：
-
-* **API 模块**：[Apache 许可证 2.0](https://www.apache.org/licenses/LICENSE-2.0)
-* **GUI 模块**：[GNU 通用公共许可证 v3.0 仅限](https://www.gnu.org/licenses/gpl-3.0.html)
-
-```
-版权所有 (c) 2025 XuehaiPan <XuehaiPan@pku.edu.cn>
-版权所有 (c) 2025 Lianzhong You <youlianzhong@gml.ac.cn>
-```
-
-详情请见 [LICENSE](LICENSE)、[COPYING](COPYING) 和 [NOTICE](NOTICE)。
-
----
-
-## 📧 联系方式
-
-* **维护者**：[Lianzhong You](mailto:youlianzhong@gml.ac.cn)
-
----
-
-使用 `nputop` 愉快地监控您的 Ascend NPU！🎉
+基于 Xuehai Pan 的 [nvitop](https://github.com/XuehaiPan/nvitop) 项目。
+项目包含 Apache-2.0 与 GPL-3.0-only 模块，具体适用许可见各文件头部、
+[LICENSE](LICENSE)、[COPYING](COPYING) 和 [NOTICE](NOTICE)。
+维护者：[Lianzhong You](mailto:youlianzhong@gml.ac.cn)。

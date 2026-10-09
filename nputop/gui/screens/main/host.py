@@ -187,9 +187,12 @@ class HostPanel(Displayable):  # pylint: disable=too-many-instance-attributes
         total_memory_total = 0
         npu_utilizations = []
         for device in self.devices:
-            memory_used = device.snapshot.memory_used
-            memory_total = device.snapshot.memory_total
-            npu_utilization = device.snapshot.npu_utilization
+            snapshot = device.cached_snapshot
+            if snapshot is None:
+                continue
+            memory_used = snapshot.memory_used
+            memory_total = snapshot.memory_total
+            npu_utilization = snapshot.npu_utilization
             if memory_used != NA and memory_total != NA:
                 total_memory_used += memory_used
                 total_memory_total += memory_total

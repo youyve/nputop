@@ -2,3 +2,19 @@ nputop.egg-info/
 __pycache__/
 dist/
 ascend_nputop.egg-info/
+build/
+.pytest_cache/
+.ruff_cache/
+.benchmarks/
+
+# Local reports and development-only material belong outside the public tree.
+/reports/
+/private/
+/docs/validation-*.md
+/docs/release-*.md
+/PREVIEW.md
+/UI_GUIDELINES.md
+/preview-run
+*.log
+*.bundle
+.DS_Store

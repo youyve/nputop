@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -13,7 +13,7 @@ keywords = [
     "ascend",
     "npu-smi",
     "Ascend",
-    "pyacl",
+    "dcmi",
     "NPU",
     "top",
     "monitoring",
@@ -29,6 +29,8 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
     "Environment :: Console",
@@ -42,14 +44,25 @@ classifiers = [
     "Topic :: Utilities",
 ]
 dependencies = [
-    # Sync with nputop/version.py and requirements.txt
     "psutil >= 5.6.6",
     "cachetools >= 1.0.1",
     "termcolor >= 1.0.0",
     "colorama >= 0.4.0; platform_system == 'Windows'",
     "windows-curses >= 2.2.0; platform_system == 'Windows'",
 ]
-dynamic = ["version", "optional-dependencies"]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+lint = [
+    "black>=24.0.0,<25.0.0a0",
+    "isort",
+    "pylint[spelling]",
+    "mypy",
+    "typing-extensions",
+    "pre-commit",
+]
+# Retain the previously published optional extra; native monitoring needs no NVML.
+cuda10 = ["nvidia-ml-py==11.450.51"]
 
 [project.scripts]
 nputop = "nputop.cli:main"
@@ -57,11 +70,14 @@ nputop = "nputop.cli:main"
 [project.urls]
 Homepage = "https://github.com/youyve/nputop"
 Repository = "https://github.com/youyve/nputop"
-Documentation = "https://nputop.readthedocs.io"
+Documentation = "https://github.com/youyve/nputop#readme"
 "Bug Report" = "https://github.com/youyve/nputop/issues"
 
 [tool.setuptools.packages.find]
 include = ["nputop", "nputop.*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "nputop.version.__version__"}
 
 [tool.black]
 line-length = 100
@@ -207,4 +223,4 @@ inline-quotes = "single"
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
 [tool.setuptools]
-license-files = []
+license-files = ["LICENSE", "COPYING", "NOTICE"]

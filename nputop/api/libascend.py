@@ -35,6 +35,9 @@ ULONGLONG_MAX : int  = 0xFFFFFFFFFFFFFFFF
 _CACHE      : dict[int, dict[str,Any]] = {}   # 物理 id ↦ 数据
 _IDX        : list[int] = []                  # 逻辑 index ↦ 物理 id
 _CACHE_TTL  = 0.8
+_DEFAULT_SMI_TIMEOUT = 3.0
+_A5_SMI_TIMEOUT = 10.0
+_SMI_TIMEOUT = None
 _cache_ts   = 0.0
 _CACHE_LOCK = threading.RLock()
 _DRIVER_VERSION = None
@@ -51,13 +54,25 @@ _POWER_LIMIT = {
     "910C": 350,
 }
 _npu_chip_phy : dict[tuple[int, int], int] = {} # (npu id, chip_id) ↦ phy id
+_PROC_CONTAINER_PIDS = {}  # (card, chip, driver PID) -> reported container PID
 _DCMI_BACKEND = None
 _DCMI_ATTEMPTED = False
 # --------- Regex ----------
 _RE_L1 = re.compile(r"^\|\s*(\d+)\s+(\S+).*?\|\s*(\S+)\s+\|\s*(\S+)\s+(\d+)")
 _RE_L2 = re.compile(r"^\|\s*(\d+)\s+(\d*)\s*\|\s*([0-9A-Fa-f:.]+|NA)\s*\|\s*(\d+).*?\|$")
 _RE_P  = re.compile(r"^\|\s*(\d+)\s+(\d+)\s+\|\s+(\d+)\s+\|.*?\|\s+(\d+)")
-_RE_R = re.compile(r"^\|\s*(\S+)\s+([\d.rcRC]+)\s+Version:\s*([\d.rcRC]+)")
+# The NPU-ID layout (seen on A5) has separate ID/Name columns, no Chip
+# or Phy-ID, and an optional trailing container PID in the process table.
+_RE_ID_L1 = re.compile(
+    r"^\|\s*(\d+)\s*\|\s*([^\s|]+)\s*\|\s*(\S+)\s*\|\s*(\S+)\s+(\d+)"
+)
+_RE_ID_L2 = re.compile(
+    r"^\|\s*\|\s*\|\s*([0-9A-Fa-f:.]+|NA)\s*\|\s*(\d+).*?\|$"
+)
+_RE_ID_P = re.compile(
+    r"^\|\s*(\d+)\s*\|\s*(\d+)\s*\|[^|]*\|\s*(\d+)\s*\|"
+)
+_RE_R = re.compile(r"\bVersion:\s*([^\s|]+)")
 
 Util = namedtuple("UtilizationRates", ["npu", "mem", "bandwidth", "aicpu"])
 ClockInfos = libdcmi.ClockInfos
@@ -91,6 +106,30 @@ def _reset_dcmi_backend() -> None:
     _DCMI_ATTEMPTED = False
     _DCMI_BACKEND = None
 
+def _smi_timeout() -> float:
+    """Detect A5 once before the first full query, preserving the legacy timeout."""
+    global _SMI_TIMEOUT
+    if _SMI_TIMEOUT is not None:
+        return _SMI_TIMEOUT
+
+    # Mapping queries are much faster than full monitoring queries on A5.
+    # Keep the default if an older driver cannot provide this information.
+    try:
+        result = subprocess.run(
+            ['npu-smi', 'info', '-m'], text=True, capture_output=True,
+            timeout=_DEFAULT_SMI_TIMEOUT, check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        _SMI_TIMEOUT = _DEFAULT_SMI_TIMEOUT
+    else:
+        _SMI_TIMEOUT = (
+            _A5_SMI_TIMEOUT
+            if re.search(r'\bAscend950[A-Za-z0-9]*\b', result.stdout)
+            else _DEFAULT_SMI_TIMEOUT
+        )
+    return _SMI_TIMEOUT
+
+
 def _update_cache(raw: str = None) -> None:
     global _cache_ts
     global _DRIVER_VERSION
@@ -103,24 +142,37 @@ def _update_cache(raw: str = None) -> None:
 
         if not raw:
             raw = subprocess.run(
-                ["npu-smi","info"], text=True, capture_output=True, timeout=3
+                ["npu-smi","info"], text=True, capture_output=True, timeout=_smi_timeout(), check=True
             ).stdout
         raw = raw.splitlines()
 
         data: dict[int, dict[str,Any]] = {}
         chip_phy: dict[tuple[int, int], int] = {}
+        id_only = False
+        process_id_only = False
+        container_column = None
+        container_pids = {}
         
         raw_iter = iter(raw)
-        next(raw_iter)
-        ln_l0 = next(raw_iter).strip()
-        if _DRIVER_VERSION is None:
-            m0 = _RE_R.match(ln_l0)
-            if m0:
-                _,_DRIVER_VERSION,_ = m0.groups()
         for ln in raw_iter:
             ln = ln.strip()
+            if _DRIVER_VERSION is None:
+                m0 = _RE_R.search(ln)
+                if m0:
+                    _DRIVER_VERSION = m0.group(1)
 
-            m1 = _RE_L1.match(ln)
+            # Select by table layout, not model name or driver version.
+            columns = [column.strip() for column in ln.split('|')[1:-1]]
+            if columns[:2] == ['NPU ID', 'Name']:
+                id_only = True
+                continue
+            if len(columns) > 1 and columns[1] == 'Process id':
+                process_id_only = columns[0] == 'NPU ID'
+                if 'Process id in container' in columns:
+                    container_column = columns.index('Process id in container')
+                continue
+
+            m1 = (_RE_ID_L1 if id_only else _RE_L1).match(ln)
             
             if m1:
                 npu_id, name, ok, pwr, tmp = m1.groups()
@@ -143,10 +195,14 @@ def _update_cache(raw: str = None) -> None:
                     chip_phy[(d['npu_id'], d['chip_id'])] = cur_id
                     break
 
-                m2 = _RE_L2.match(ln_l2)
+                m2 = (_RE_ID_L2 if id_only else _RE_L2).match(ln_l2)
 
                 if m2:
-                    chip_id, phy_id, bus, aic = m2.groups()
+                    if id_only:
+                        bus, aic = m2.groups()
+                        chip_id, phy_id = '0', None
+                    else:
+                        chip_id, phy_id, bus, aic = m2.groups()
                     chip_id_kwargs = {'chip_id': int(chip_id)} if chip_id else {}
 
                     if phy_id:
@@ -174,9 +230,17 @@ def _update_cache(raw: str = None) -> None:
 
                 continue
 
-            mp = _RE_P.match(ln)
+            mp = (_RE_ID_P if process_id_only else _RE_P).match(ln)
             if mp:
-                npu_id, chip_id, pid, mem = map(int, mp.groups())
+                if process_id_only:
+                    npu_id, pid, mem = map(int, mp.groups())
+                    chip_id = 0
+                else:
+                    npu_id, chip_id, pid, mem = map(int, mp.groups())
+                if container_column is not None and container_column < len(columns):
+                    container_pid = columns[container_column]
+                    if container_pid.isdigit() and int(container_pid) > 0:
+                        container_pids[(npu_id, chip_id, pid)] = int(container_pid)
                 phy_id = chip_phy.get((npu_id, chip_id))
                 if phy_id is None:
                     continue
@@ -186,12 +250,14 @@ def _update_cache(raw: str = None) -> None:
         for d in data.values():
             d.setdefault("power", NA); d.setdefault("temp", NA)
             d.setdefault("aicore", NA)
-            d.setdefault("hbm_used", 0); d.setdefault("hbm_total", 0)
+            d.setdefault("hbm_used", NA); d.setdefault("hbm_total", NA)
             d.setdefault("procs", [])
             mem_pct = (round(100*d["hbm_used"]/d["hbm_total"],1)
-                       if d["hbm_total"] else NA)
+                       if isinstance(d["hbm_total"], (int, float)) and d["hbm_total"] > 0
+                       and isinstance(d["hbm_used"], (int, float)) else NA)
             d["util"] = Util(d["aicore"], mem_pct, NA, NA)
 
+        _PROC_CONTAINER_PIDS.clear(); _PROC_CONTAINER_PIDS.update(container_pids)
         _CACHE.clear(); _CACHE.update(data)
         _IDX.clear();   _IDX.extend(sorted(_CACHE.keys()))
         _npu_chip_phy.clear(); _npu_chip_phy.update(chip_phy)
@@ -388,6 +454,8 @@ def ascendDeviceGetMemoryInfo(i:int):
     if id is None: return MemInfo(0,0,0)
     d=_CACHE.get(id,{})
     tot=d.get("hbm_total",0); used=d.get("hbm_used",0)
+    if not isinstance(tot, (int, float)) or not isinstance(used, (int, float)):
+        return MemInfo(NA, NA, NA)
     return MemInfo(tot, tot-used, used)
 
 
