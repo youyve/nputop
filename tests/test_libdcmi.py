@@ -1,4 +1,6 @@
 import ctypes
+import threading
+import time
 
 from nputop.api import libascend, libdcmi
 from nputop.api.device import Device
@@ -47,6 +49,26 @@ class FakeDcmiLibrary:
         info._obj.freq = 1600
         info._obj.temp = 42
         info._obj.bandwith_util_rate = 7
+        return 0
+
+    def dcmi_get_hbm_info(self, _card_id, chip_id, info):
+        """Legacy spelling exported by older drivers."""
+
+        self._record('legacy_hbm')
+        info._obj.memory_size = 32 * 1024
+        info._obj.memory_usage = 512 + chip_id
+        info._obj.freq = 1500
+        info._obj.temp = 40
+        info._obj.bandwith_util_rate = 5
+        return 0
+
+    def dcmi_get_device_pcie_info(self, _card_id, chip_id, info):
+        """Legacy v1 PCIe struct without the domain field."""
+
+        self._record('legacy_pcie')
+        info._obj.bdf_busid = 0x30 + chip_id
+        info._obj.bdf_deviceid = 1
+        info._obj.bdf_funcid = 0
         return 0
 
     def dcmi_get_device_temperature(self, _card_id, _chip_id, value):
@@ -126,6 +148,37 @@ class FailingMemoryDcmiLibrary(FakeDcmiLibrary):
 
     def dcmi_get_device_memory_info_v3(self, _card_id, _chip_id, _info):
         return -1
+
+
+class ConcurrencyTrackingLibrary(FakeDcmiLibrary):
+    """Fake library that fails the test if driver calls overlap."""
+
+    def __init__(self):
+        super().__init__()
+        self._in_flight = 0
+        self.max_in_flight = 0
+
+    def dcmi_get_device_utilization_rate(self, *args, **kwargs):
+        self._in_flight += 1
+        self.max_in_flight = max(self.max_in_flight, self._in_flight)
+        time.sleep(0.01)
+        try:
+            return super().dcmi_get_device_utilization_rate(*args, **kwargs)
+        finally:
+            self._in_flight -= 1
+
+
+class _WithoutSymbols:
+    """Hide symbols from a fake library to emulate older drivers."""
+
+    def __init__(self, library, *hidden):
+        self._library = library
+        self._hidden = set(hidden)
+
+    def __getattr__(self, name):
+        if name in self._hidden:
+            raise AttributeError(name)
+        return getattr(self._library, name)
 
 
 def test_dcmi_backend_enumerates_devices_and_converts_units():
@@ -288,3 +341,49 @@ def test_libascend_falls_back_to_npusmi_when_dcmi_unavailable(monkeypatch):
     assert libascend.ascendDeviceGetCount() == 1
 
     libascend._reset_dcmi_backend()
+
+
+def test_hbm_info_falls_back_to_legacy_symbol():
+    library = FakeDcmiLibrary()
+    backend = libdcmi.create_backend(
+        _WithoutSymbols(library, 'dcmi_get_device_hbm_info')
+    )
+
+    hbm = backend.hbm_info(0)
+
+    assert library.call_counts.get('legacy_hbm') == 1
+    assert hbm == libdcmi.HbmInfo(
+        32 * 1024 * 1024 * 1024,
+        1500,
+        512 * 1024 * 1024,
+        40,
+        5,
+    )
+
+
+def test_bus_id_falls_back_to_legacy_pcie_symbol():
+    library = FakeDcmiLibrary()
+    backend = libdcmi.create_backend(
+        _WithoutSymbols(library, 'dcmi_get_device_pcie_info_v2')
+    )
+
+    assert backend.bus_id(0) == '0000:30:01.0'
+    assert library.call_counts.get('legacy_pcie') == 1
+
+
+def test_backend_serializes_concurrent_driver_calls():
+    library = ConcurrencyTrackingLibrary()
+    backend = libdcmi.create_backend(library)
+    barrier = threading.Barrier(8)
+
+    def worker():
+        barrier.wait()
+        backend.utilization_rates(0)
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert library.max_in_flight == 1

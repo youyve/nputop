@@ -31,6 +31,7 @@ import glob
 import os
 import platform
 import sys
+import threading
 from collections import namedtuple
 from typing import Any, Iterable
 
@@ -118,6 +119,20 @@ class _PcieInfoV2(ctypes.Structure):
         ("bdf_deviceid", ctypes.c_uint),
         ("bdf_funcid", ctypes.c_uint),
         ("reserve", ctypes.c_ubyte * 32),
+    ]
+
+
+class _PcieInfo(ctypes.Structure):
+    """Legacy ``struct dcmi_tag_pcie_idinfo`` without the domain field."""
+
+    _fields_ = [
+        ("deviceid", ctypes.c_uint),
+        ("venderid", ctypes.c_uint),
+        ("subvenderid", ctypes.c_uint),
+        ("subdeviceid", ctypes.c_uint),
+        ("bdf_deviceid", ctypes.c_uint),
+        ("bdf_busid", ctypes.c_uint),
+        ("bdf_funcid", ctypes.c_uint),
     ]
 
 
@@ -294,6 +309,10 @@ class DcmiBackend:
         self._functions: dict[str, Any] = {}
         self._devices: list[_DeviceRef] = []
         self._metadata: dict[int, tuple[str, str]] = {}
+        # The GUI collects device and process snapshots on background
+        # threads.  DCMI does not document thread safety, so every driver
+        # call is serialized through one reentrant lock.
+        self._lock = threading.RLock()
         self._configure()
         self._initialize()
 
@@ -328,7 +347,24 @@ class DcmiBackend:
                 ctypes.c_int,
                 ctypes.POINTER(_PcieInfoV2),
             ],
+            # Older drivers only export the legacy PCIe spelling(s).
+            "dcmi_get_device_pcie_info": [
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.POINTER(_PcieInfo),
+            ],
+            "dcmi_get_pcie_info": [
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.POINTER(_PcieInfo),
+            ],
             "dcmi_get_device_hbm_info": [
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.POINTER(_HbmInfo),
+            ],
+            # Some older drivers only export ``dcmi_get_hbm_info``.
+            "dcmi_get_hbm_info": [
                 ctypes.c_int,
                 ctypes.c_int,
                 ctypes.POINTER(_HbmInfo),
@@ -404,7 +440,10 @@ class DcmiBackend:
         if function is None:
             return None
         try:
-            return int(function(*args))
+            # ctypes releases the GIL around the C call, so without the lock
+            # the snapshot and process daemons can enter DCMI concurrently.
+            with self._lock:
+                return int(function(*args))
         except (AttributeError, OSError, TypeError, ValueError):
             return None
 
@@ -496,15 +535,37 @@ class DcmiBackend:
         if cached is not None and cached[1]:
             return cached[1]
 
-        pcie = _PcieInfoV2()
-        if self._struct("dcmi_get_device_pcie_info_v2", index, pcie) is None:
+        value = self._query_bus_id(index)
+        if value is None:
             return NA
-        if min(pcie.domain, pcie.bdf_busid, pcie.bdf_deviceid, pcie.bdf_funcid) < 0:
-            return NA
-        value = f"{int(pcie.domain):04X}:{int(pcie.bdf_busid):02X}:{int(pcie.bdf_deviceid):02X}.{int(pcie.bdf_funcid):X}"
         name = cached[0] if cached is not None else ""
         self._metadata[index] = (name, value)
         return value
+
+    @staticmethod
+    def _format_bdf(domain: int, bus: int, device: int, function: int) -> str:
+        return f"{int(domain):04X}:{int(bus):02X}:{int(device):02X}.{int(function):X}"
+
+    def _query_bus_id(self, index: int) -> str | None:
+        pcie = _PcieInfoV2()
+        # The v2 query failed on a driver that exports the v2 symbol: report
+        # N/A instead of retrying with the deprecated struct.
+        if self._struct("dcmi_get_device_pcie_info_v2", index, pcie) is not None:
+            if min(pcie.domain, pcie.bdf_busid, pcie.bdf_deviceid, pcie.bdf_funcid) >= 0:
+                return self._format_bdf(
+                    pcie.domain, pcie.bdf_busid, pcie.bdf_deviceid, pcie.bdf_funcid
+                )
+            return None
+        # Legacy drivers only export the v1 struct, which has no domain.
+        legacy = _PcieInfo()
+        for symbol in ("dcmi_get_device_pcie_info", "dcmi_get_pcie_info"):
+            if self._struct(symbol, index, legacy) is not None:
+                if min(legacy.bdf_busid, legacy.bdf_deviceid, legacy.bdf_funcid) >= 0:
+                    return self._format_bdf(
+                        0, legacy.bdf_busid, legacy.bdf_deviceid, legacy.bdf_funcid
+                    )
+                break
+        return None
 
     @staticmethod
     def _valid_percentage(value: int) -> int | None:
@@ -518,7 +579,13 @@ class DcmiBackend:
         """
 
         hbm = _HbmInfo()
-        if self._struct("dcmi_get_device_hbm_info", index, hbm) is None:
+        if "dcmi_get_device_hbm_info" in self._functions:
+            # The query failed on a driver that exports the modern symbol:
+            # report N/A instead of retrying with the deprecated spelling.
+            if self._struct("dcmi_get_device_hbm_info", index, hbm) is None:
+                return HbmInfo(NA, NA, NA, NA, NA)
+        elif self._struct("dcmi_get_hbm_info", index, hbm) is None:
+            # Some older drivers only export the legacy spelling.
             return HbmInfo(NA, NA, NA, NA, NA)
         total = int(hbm.memory_size) * 1024 * 1024
         used = int(hbm.memory_usage) * 1024 * 1024
