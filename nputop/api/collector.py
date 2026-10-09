@@ -54,6 +54,14 @@ def _unique(iterable: Iterable[_T]) -> list[_T]:
     return list(OrderedDict.fromkeys(iterable).keys())
 
 
+def _metric_value(value: float | int | str | None, unit: float | int) -> float:
+    """Keep unavailable driver values missing in numeric collection output."""
+    try:
+        return float(value) / unit
+    except (TypeError, ValueError):
+        return math.nan
+
+
 # pylint: disable-next=too-many-branches
 def take_snapshots(
     devices: Device | Iterable[Device] | None = None,
@@ -740,7 +748,7 @@ class ResourceMetricCollector:  # pylint: disable=too-many-instance-attributes
             device_identifiers[device_snapshot.real] = identifier
 
             for attr, name, unit in self.DEVICE_METRICS:
-                value = float(getattr(device_snapshot, attr)) / unit
+                value = _metric_value(getattr(device_snapshot, attr), unit)
                 metrics[f'{identifier}/{name}'] = value
 
         for process_snapshot in npu_process_snapshots:
@@ -749,7 +757,7 @@ class ResourceMetricCollector:  # pylint: disable=too-many-instance-attributes
 
             for attr, scope, name, unit in self.PROCESS_METRICS:
                 scope = scope or device_identifier
-                value = float(getattr(process_snapshot, attr)) / unit
+                value = _metric_value(getattr(process_snapshot, attr), unit)
                 metrics[f'{identifier}/{scope}/{name}'] = value
 
         with self._lock:
