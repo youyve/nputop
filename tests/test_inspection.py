@@ -2,6 +2,10 @@
 
 import ctypes
 import os
+import json
+import signal
+import subprocess
+import sys
 import time
 from unittest.mock import Mock
 
@@ -149,6 +153,69 @@ def test_real_host_worker_rejects_unverified_request_and_closes():
         assert inspector.process is None and child._closed
     finally:
         inspector.close()
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='POSIX parent-death signals')
+@pytest.mark.parametrize('parent_signal', ['SIGHUP', 'SIGKILL'])
+@pytest.mark.parametrize('after_request', [False, True])
+def test_inspector_exits_when_its_parent_dies(parent_signal, after_request):
+    import select
+
+    # Only the test-created parent and its Inspector receive signals. Check both
+    # an idle new worker and one waiting after a completed page request.
+    code = '''
+import json, os, sys, time
+import psutil
+from nputop.api.inspection import Inspector
+if __name__ == '__main__':
+    inspector = Inspector()
+    inspector._start()
+    assert inspector.session_ready.wait(5)
+    if sys.argv[1] == 'True':
+        target = dict(pid=os.getpid(), created=0, pid_namespace='unverified')
+        deadline = time.monotonic() + 5
+        while inspector.poll('page', ('environ', target, [])) is None:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+    print(json.dumps({'pid': inspector.process.pid}), flush=True)
+    time.sleep(60)
+'''
+    parent = subprocess.Popen(
+        [sys.executable, '-c', code, str(after_request)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        universal_newlines=True,
+    )
+    worker = None
+    try:
+        assert select.select([parent.stdout], [], [], 10)[0], 'Inspector did not start'
+        worker = psutil.Process(json.loads(parent.stdout.readline())['pid'])
+        parent.send_signal(getattr(signal, parent_signal))
+        parent.wait(timeout=3)
+
+        def alive():
+            try:
+                return worker.is_running() and worker.status() not in (
+                    psutil.STATUS_ZOMBIE,
+                    psutil.STATUS_DEAD,
+                )
+            except psutil.NoSuchProcess:
+                return False
+
+        deadline = time.monotonic() + 3
+        while alive() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert not alive(), 'Inspector remained alive after its parent exited'
+    finally:
+        if parent.poll() is None:
+            parent.kill()
+        parent.wait(timeout=3)
+        parent.stdout.close()
+        if worker is not None:
+            try:
+                worker.kill()
+            except psutil.NoSuchProcess:
+                pass
 
 
 @pytest.mark.skipif(

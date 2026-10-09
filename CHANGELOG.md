@@ -4,6 +4,8 @@
 
 ### English
 
+- Stop idle host-inspection workers after parent exit, including terminal
+  disconnects. Limit idle redraws while keeping input and new data responsive.
 - Make the native dashboard the default; keep `--legacy-ui` and the
   `--preview` compatibility alias. The normal interval remains two seconds.
 - Prefer isolated, serial DCMI collection with automatic SMI fallback; explicit
@@ -30,6 +32,8 @@
 
 ### 中文
 
+- 父进程退出（包括终端断开）后清理空闲主机检查子进程；降低空闲重绘频率，
+  保持键鼠和新数据的及时响应。
 - 新界面成为默认入口，保留 `--legacy-ui` 及 `--preview` 兼容别名；
   正常采样间隔仍为两秒。
 - 优先使用独立进程内串行执行的 DCMI 采集，自动模式支持 SMI 回退；显式指定后端

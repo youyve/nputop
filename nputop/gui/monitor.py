@@ -1365,21 +1365,38 @@ def run_dashboard(sampler, args):
                 curses.set_escdelay(25)
         window.timeout(25)
         window.keypad(True)
+        next_draw, redraw = 0.0, True
+        drawn_frame = drawn_inspection = drawn_size = drawn_error = None
         while True:
             frame = sampler.poll(dashboard.selected_key(sampler.frame))
             token, request = dashboard.inspect_request(frame)
             dashboard.inspection = inspector.poll(token, request)
             height, width = window.getmaxyx()
-            window.erase()
-            lines = dashboard.lines(frame, width, height, sampler.error)
-            for y, line in enumerate(lines[:height]):
-                try:
-                    draw_line(window, y, line, width, styles)
-                except curses.error:
-                    pass
-            window.noutrefresh()
-            curses.doupdate()
-            if not dashboard.feed(window.getch(), frame, sampler):
+            # Keep input/collector polling fast, but rebuild idle clocks and
+            # freshness labels at most four times a second. Events draw now.
+            if (
+                redraw
+                or frame is not drawn_frame
+                or dashboard.inspection is not drawn_inspection
+                or (height, width) != drawn_size
+                or sampler.error != drawn_error
+                or time.monotonic() >= next_draw
+            ):
+                window.erase()
+                lines = dashboard.lines(frame, width, height, sampler.error)
+                for y, line in enumerate(lines[:height]):
+                    try:
+                        draw_line(window, y, line, width, styles)
+                    except curses.error:
+                        pass
+                window.noutrefresh()
+                curses.doupdate()
+                drawn_frame, drawn_inspection = frame, dashboard.inspection
+                drawn_size, drawn_error = (height, width), sampler.error
+                next_draw = time.monotonic() + 0.25
+            key = window.getch()
+            redraw = key != -1 or dashboard.escape_at is not None
+            if not dashboard.feed(key, frame, sampler):
                 break
 
     try:

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import time
 import queue
+import os
 
 import psutil
 
@@ -118,11 +119,16 @@ def inspect(request, cache=None):
 
 
 def _inspect_worker(channel, mode):
-    connection, requests = channel
+    connection, requests, parent_pid = channel
     cache = {}
     try:
-        while True:
-            token, request = requests.get()
+        # Queue keeps a writer open in this child, so parent death cannot yield
+        # EOF. A bounded wait also covers a parent lost before spawn completed.
+        while os.getppid() == parent_pid:
+            try:
+                token, request = requests.get(timeout=1.0)
+            except queue.Empty:
+                continue
             try:
                 result = inspect(request, cache)
                 result['target'] = dict(request[1])
@@ -156,7 +162,7 @@ class Inspector(Sampler):
         self.session_ready = self.context.Event()
         self.process = self.context.Process(
             target=_session_worker,
-            args=((child, self.requests), 'host', self.session_ready, _inspect_worker),
+            args=((child, self.requests, os.getpid()), 'host', self.session_ready, _inspect_worker),
             daemon=True,
         )
         self.process.start()
