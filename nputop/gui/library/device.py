@@ -7,7 +7,6 @@
 from cachetools.func import ttl_cache
 
 from nputop.api import NA
-from nputop.api import MigDevice as MigDeviceBase
 from nputop.api import PhysicalDevice as DeviceBase
 from nputop.api import utilization2string
 from nputop.gui.library.process import NpuProcess
@@ -124,18 +123,8 @@ class Device(DeviceBase):
         return self._snapshot
 
     def mig_devices(self):
-        mig_devices = []
-
-        if self.is_mig_mode_enabled():
-            for mig_index in range(self.max_mig_device_count()):
-                try:
-                    mig_device = MigDevice(index=(self.index, mig_index))
-                except libnvml.NVMLError:  # noqa: PERF203
-                    break
-                else:
-                    mig_devices.append(mig_device)
-
-        return mig_devices
+        # Preserve the compatibility method; Ascend exposes no NVIDIA MIG devices.
+        return []
 
     fan_speed = ttl_cache(ttl=5.0)(DeviceBase.fan_speed)
     temperature = ttl_cache(ttl=5.0)(DeviceBase.temperature)

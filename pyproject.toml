@@ -8,6 +8,8 @@ description = "An interactive Ascend-NPU process viewer."
 readme = "README.md"
 requires-python = ">= 3.7"
 authors = [{ name = "Lianzhong You", email = "youlianzhong@gml.ac.cn" }]
+# Legacy license metadata keeps Python 3.7-compatible setuptools builds working.
+# Migrate to PEP 639 together with the build-tool compatibility floor.
 license = { text = "Apache License, Version 2.0 (Apache-2.0) & GNU General Public License, Version 3 (GPL-3.0)" }
 keywords = [
     "ascend",
@@ -31,7 +33,6 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
-    "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
     "Environment :: Console",
     "Environment :: Console :: Curses",
@@ -98,7 +99,6 @@ multi_line_output = 3
 # Sync with requires-python
 python_version = "3.8"  # appease mypy for syntax errors in numpy stubs
 mypy_path = ["."]
-exclude = ["nputop-exporter/setup.py"]
 pretty = true
 show_error_codes = true
 show_error_context = true
@@ -118,11 +118,8 @@ warn_unused_configs = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = ['nputop.callbacks.*', 'nputop.gui.*']
+module = ['nputop.gui.*']
 ignore_errors = true
-
-[tool.codespell]
-ignore-words = "docs/source/spelling_wordlist.txt"
 
 [tool.ruff]
 # Sync with requires-python
@@ -195,18 +192,10 @@ ignore = [
 "nputop/api/lib*.py" = [
     "N",       # pep8-naming
 ]
-"nputop/callbacks/*.py" = [
-    "D",       # pydocstyle
-    "ANN",     # flake8-annotations
-]
 "nputop/gui/**/*.py" = [
     "D",       # pydocstyle
     "ANN",     # flake8-annotations
     "RUF012",  # mutable-class-default
-]
-"docs/source/conf.py" = [
-    "D",       # pydocstyle
-    "INP001",  # flake8-no-pep420
 ]
 
 [tool.ruff.lint.pydocstyle]

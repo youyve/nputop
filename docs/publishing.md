@@ -24,11 +24,30 @@ outside the repository. The commands below use 0.1.0 as the release example.
 历史。原始验证报告保留在仓库外。以下命令以 0.1.0 为例。
 
 ```bash
+# From the repository root: remove only generated build metadata.
+rm -rf build *.egg-info
 python -m build
 python tools/check_distribution.py dist/*.whl dist/*.tar.gz
 python -m twine check dist/*.whl dist/*.tar.gz
 python tools/prepare_conda_recipe.py dist/ascend_nputop-0.1.0.tar.gz --output dist/conda/meta.yaml
 ```
+
+Prefer a clean checkout. When reusing a working tree, clear generated `build/`
+and `*.egg-info` first: cached `SOURCES.txt` can retain files from older releases.
+The manifest prunes documentation, tools and assets before applying the public
+file list, and the archive check rejects unexpected contents.
+
+建议从干净检出构建。复用工作目录时，先清理自动生成的 `build/` 和 `*.egg-info`，
+避免旧 `SOURCES.txt` 带入历史文件。清单会先排除文档、工具与图片目录的缓存项，
+再应用公开文件列表；归档检查会拒绝额外内容。
+
+License metadata retains the syntax supported by Python 3.7 build tools.
+Migration to PEP 639 needs a separate compatibility change: setuptools introduced
+SPDX expressions and `project.license-files` in
+[77.0.0](https://setuptools.pypa.io/en/latest/userguide/pyproject_config.html).
+
+许可证元数据暂保留 Python 3.7 构建工具支持的语法。PEP 639 迁移需单独处理构建
+兼容性：SPDX 表达式及 `project.license-files` 从 setuptools 77.0.0 才开始支持。
 
 The helper reads the version, Python requirement and runtime dependency minima
 from the source archive's metadata and hashes that exact archive. It generates
@@ -52,13 +71,15 @@ PyPI 源码包的校验值。
 
 ## Publish and verify / 发布与核对
 
-1. Publish the reviewed commit and screenshot asset, and tag `v0.1.0`.
-   README uses the repository's screenshot URL so PyPI can render it too.
+1. Merge the reviewed commit and screenshot asset into `main`, and tag `v0.1.0`.
+   Open the README screenshot URL and confirm it loads before uploading to PyPI;
+   the URL points to `main`, not the release branch.
 2. Upload the verified wheel and source archive to PyPI. Then run the feedstock
    CI against the now-available source URL and merge the reviewed recipe update.
 3. Check all three installation routes before the release announcement.
 
-1. 推送已审阅提交及截图资源，创建 `v0.1.0` 标签。README 使用仓库截图 URL，以便 PyPI 展示。
+1. 将已审阅提交及截图资源合并到 `main`，创建 `v0.1.0` 标签。上传 PyPI 前打开
+   README 截图 URL，确认能够加载；该链接指向 `main`，而非发布分支。
 2. 上传通过检查的 wheel 和源码包到 PyPI；源码 URL 可用后完成 feedstock CI，合并配方更新。
 3. 发布公告前，检查三个安装入口均能安装 0.1.0。
 

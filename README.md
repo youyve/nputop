@@ -110,9 +110,10 @@ The default interval is two seconds. `--only` selects display IDs; use
 | Process tree / history / environment | `t` / Enter / `e` |
 | Device details / mark a process | `d` / Space |
 | Sort / reverse order | `s` / `/` |
-| Kill / terminate / interrupt | `k` / `T` / `I` or Ctrl-C |
+| Kill / terminate / interrupt | `k/K` / `T` / `I` or Ctrl-C |
 
 Process signals require a selected or marked target and confirmation.
+As in nvitop, `k/K` requests SIGKILL; use ↑↓ or Alt-k / Alt-j to move the selection.
 Ctrl-C requests SIGINT inside the TUI; use `q` to quit.
 
 <details>

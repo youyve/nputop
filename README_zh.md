@@ -110,9 +110,10 @@ nputop --readonly
 | 进程树／资源历史／环境变量 | `t` / Enter / `e` |
 | 设备详情／标记进程 | `d` / 空格 |
 | 切换排序／反转顺序 | `s` / `/` |
-| 强制结束／终止／中断进程 | `k` / `T` / `I` 或 Ctrl-C |
+| 强制结束／终止／中断进程 | `k/K` / `T` / `I` 或 Ctrl-C |
 
 发送信号前必须选中或标记目标，并经过确认。
+与 nvitop 一致，`k/K` 请求 SIGKILL；移动选择请用 ↑↓ 或 Alt-k / Alt-j。
 TUI 内 Ctrl-C 请求 SIGINT；退出请用 `q`。
 
 <details>

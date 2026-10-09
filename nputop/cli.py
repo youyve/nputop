@@ -9,7 +9,6 @@ import curses
 import os
 import subprocess
 import sys
-import textwrap
 
 from nputop.api import HostProcess
 from nputop.gui import UI, USERNAME, Device, colored, libcurses, set_color, setlocale_utf8
