@@ -1,5 +1,21 @@
 # Changelog / 版本变更
 
+## Unreleased / 未发布
+
+### English
+
+- Default the native dashboard to a one-second sampling target, measured between
+  request starts instead of adding a full interval after collection. Slow queries
+  stay serial and missed samples are not queued. Explicit intervals, error retry
+  backoff, worker timeouts and backend selection remain supported. Legacy UI and
+  public collection API defaults are unchanged.
+
+### 中文
+
+- 新界面默认以一秒为采样目标间隔，从请求发出时计时，不再于采集完成后额外等待
+  完整间隔。慢查询保持串行，不积压补采任务；保留显式间隔、错误重试退避、超时和
+  后端选择机制。旧界面及公共采集 API 的默认值保持不变。
+
 ## 0.1.0
 
 ### English

@@ -97,12 +97,15 @@ Start with the automatic layout, or tailor the view to your session:
 nputop --monitor full
 nputop --only 0 2
 nputop --user
-nputop --interval 1
+nputop --interval 2
 nputop --light --colorful
 nputop --readonly
 ```
 
-The default interval is two seconds. `--only` selects display IDs; use
+Source builds target one second between sample starts, including collection time;
+slow queries never overlap. Published 0.1.0 defaults to two seconds after each
+sample; use `nputop --interval 1` for a shorter wait with that release.
+`--only` selects display IDs; use
 `ASCEND_RT_VISIBLE_DEVICES=0 nputop --only-visible` to filter by runtime logical IDs.
 
 | Action | Keys |

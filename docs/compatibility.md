@@ -93,7 +93,12 @@ driver are required for hardware monitoring. Imports, help and version work
 without a driver; hardware collection reports an explicit error.
 
 The native dashboard is the default in 0.1.0. `--legacy-ui` selects the previous
-interface; `--preview` remains an alias. The default interval is two seconds.
+interface; `--preview` remains an alias. Published 0.1.0 waits two seconds after
+each sample by default. Current source builds target one second between sample
+starts, including query time. Slow queries run serially without queuing missed
+samples; errors retain their retry backoff. `--interval` overrides this target
+for the entire native snapshot (devices, host and processes). Legacy UI and
+public collection API defaults are unchanged.
 Existing theme, threshold and filter options and `nputop_*` configuration
 variables remain supported; command-line options take precedence.
 

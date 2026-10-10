@@ -800,6 +800,7 @@ class Sampler:
 
     def poll(self, detail=None):
         now = time.monotonic()
+        received_frame = False
         if self.connection is not None and self.connection.poll():
             try:
                 kind, payload = self.connection.recv()
@@ -807,6 +808,7 @@ class Sampler:
                 kind, payload = 'crash', 'sampling worker exited unexpectedly'
             self.inflight = None
             if kind == 'frame':
+                received_frame = True
                 self.frame, self.error = payload, None
                 if self.mode == 'auto' and payload['backend'] == 'smi':
                     self.worker_mode = 'smi'
@@ -815,7 +817,6 @@ class Sampler:
                     self.frame['requested_backend'] = self.mode
                 self.failures = 0
                 self.sequence += 1
-                self.next_sample = now + self.interval
             elif kind == 'crash':
                 self._failed_worker(payload, now)
             else:
@@ -826,12 +827,17 @@ class Sampler:
             self._failed_worker('sampling worker exited unexpectedly', now)
         if self.inflight is not None and now - self.inflight >= self.timeout:
             self._failed_worker(f'sampling timed out after {self.timeout:g}s', now)
-        if self.inflight is None and now >= self.next_sample:
+        # Deliver a completed frame before starting more work, including when
+        # a slow first sample is consumed by --once/--json and then closed.
+        if not received_frame and self.inflight is None and now >= self.next_sample:
             if self.process is None:
                 self._start()
             try:
                 self.connection.send(('collect', detail))
                 self.inflight = now
+                # Count collection time toward the interval. A late poll starts
+                # one new sample from now; missed intervals are never queued.
+                self.next_sample = now + self.interval
             except (BrokenPipeError, EOFError, OSError) as exc:
                 self._failed_worker(f'sampling worker connection failed: {exc}', now)
         return self.frame

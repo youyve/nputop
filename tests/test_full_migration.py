@@ -175,7 +175,7 @@ def test_cli_compatibility_and_precedence(monkeypatch):
     monkeypatch.setenv('nputop_NPU_UTILIZATION_THRESHOLDS', '20,90')
     monkeypatch.setenv('ASCEND_RT_VISIBLE_DEVICES', '2,9')
     args = preview.parse_arguments(['--only-visible'])
-    assert args.interval == 2 and args.light and args.colorful and args.monitor == 'full'
+    assert args.interval == 1 and args.light and args.colorful and args.monitor == 'full'
     assert args.npu_util_thresh == [20, 90] and args.visible_ids == [2, 9]
     args = preview.parse_arguments(
         ['-m', 'compact', '--npu-util-thresh', '5', '60', '-o', '0', '-ov']

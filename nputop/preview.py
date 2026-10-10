@@ -54,8 +54,8 @@ def parse_arguments(argv=None):
     parser.add_argument(
         '--interval',
         type=float,
-        default=2.0,
-        help='Sampling interval after each completed frame (seconds).',
+        default=1.0,
+        help='Target interval between sample starts in seconds (default: 1). Slow queries do not overlap.',
     )
     parser.add_argument(
         '--timeout',

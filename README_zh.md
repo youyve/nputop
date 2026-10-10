@@ -97,12 +97,14 @@ nputop
 nputop --monitor full
 nputop --only 0 2
 nputop --user
-nputop --interval 1
+nputop --interval 2
 nputop --light --colorful
 nputop --readonly
 ```
 
-默认刷新间隔为两秒。`--only` 按显示编号筛选；按运行时逻辑编号筛选可使用
+当前源码默认以一秒为采样起点间隔，采集耗时计入间隔，慢查询不会重叠执行。
+已发布的 0.1.0 仍在每次采集后等待两秒，可用 `nputop --interval 1` 缩短等待。
+`--only` 按显示编号筛选；按运行时逻辑编号筛选可使用
 `ASCEND_RT_VISIBLE_DEVICES=0 nputop --only-visible`。
 
 | 操作 | 按键 |
