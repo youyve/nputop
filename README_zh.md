@@ -42,8 +42,11 @@
 ### PyPI
 
 ```bash
-python -m pip install --upgrade ascend-nputop
+pip install ascend-nputop
 ```
+
+升级已有安装：`pip install --upgrade ascend-nputop`。
+按环境需要，可将 `pip` 替换为 `pip3`。
 
 ### Conda
 

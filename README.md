@@ -42,8 +42,11 @@ No PyACL or NVIDIA NVML Python package is needed.
 ### PyPI
 
 ```bash
-python -m pip install --upgrade ascend-nputop
+pip install ascend-nputop
 ```
+
+To upgrade, run `pip install --upgrade ascend-nputop`.
+Replace `pip` with `pip3` if your environment requires it.
 
 ### Conda
 
