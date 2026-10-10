@@ -163,4 +163,4 @@ AICore 与 UTL 使用不同计数器；310P 回退到 AICore 时标注 `UTL*`。
 基于 Xuehai Pan 的 [nvitop](https://github.com/XuehaiPan/nvitop) 项目。
 项目包含 Apache-2.0 与 GPL-3.0-only 模块，具体适用许可见各文件头部、
 [LICENSE](LICENSE)、[COPYING](COPYING) 和 [NOTICE](NOTICE)。
-维护者：[Lianzhong You](mailto:youlianzhong@gml.ac.cn)。
+维护者：[Lianzhong You](mailto:lyou593@connect.hkust-gz.edu.cn)。

@@ -166,4 +166,4 @@ Release maintainers can follow the [PyPI / Conda / uv release guide](docs/publis
 Based on [nvitop](https://github.com/XuehaiPan/nvitop) by Xuehai Pan.
 The project contains Apache-2.0 and GPL-3.0-only modules; consult the file headers,
 [LICENSE](LICENSE), [COPYING](COPYING) and [NOTICE](NOTICE).
-Maintained by [Lianzhong You](mailto:youlianzhong@gml.ac.cn).
+Maintained by [Lianzhong You](mailto:lyou593@connect.hkust-gz.edu.cn).
