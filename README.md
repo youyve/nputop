@@ -102,7 +102,10 @@ nputop --light --colorful
 nputop --readonly
 ```
 
-The default interval is two seconds. `--only` selects display IDs; use
+In 0.1.0, the default sampling interval is 2 seconds. Use `nputop --interval 1`
+to set it to 1 second; actual refreshes also include collection time.
+
+`--only` selects display IDs; use
 `ASCEND_RT_VISIBLE_DEVICES=0 nputop --only-visible` to filter by runtime logical IDs.
 
 | Action | Keys |

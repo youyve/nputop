@@ -102,7 +102,9 @@ nputop --light --colorful
 nputop --readonly
 ```
 
-默认刷新间隔为两秒。`--only` 按显示编号筛选；按运行时逻辑编号筛选可使用
+0.1.0 默认采样间隔为 2 秒，可用 `nputop --interval 1` 设为 1 秒；实际刷新间隔还包含采集耗时。
+
+`--only` 按显示编号筛选；按运行时逻辑编号筛选可使用
 `ASCEND_RT_VISIBLE_DEVICES=0 nputop --only-visible`。
 
 | 操作 | 按键 |
