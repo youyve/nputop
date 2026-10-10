@@ -30,7 +30,7 @@ class Line:
     shared_power: tuple = ()  # (column, width, emphasis), independent of one die's selection
 
 
-def draw_line(window, y, line, width, styles):
+def draw_line(window, y, line, width, styles, x=0):
     """Keep selection brightness on colored fields without reversing device bars."""
 
     def attributes(style):
@@ -41,9 +41,9 @@ def draw_line(window, y, line, width, styles):
         return value
 
     text = str(
-        WideString(''.join(c if c.isprintable() else ' ' for c in line.text))[: max(0, width - 1)]
+        WideString(''.join(c if c.isprintable() else ' ' for c in line.text))[: max(0, width - x - 1)]
     )
-    window.addstr(y, 0, text, attributes(line.style))
+    window.addstr(y, x, text, attributes(line.style))
     for span in line.spans:
         start, length, style = span[:3]
         part = str(WideString(text)[start : start + length])
@@ -53,7 +53,7 @@ def draw_line(window, y, line, width, styles):
                 attr = styles.get(style, 0)
                 if span[3]:
                     attr = (attr & ~(curses.A_BOLD | curses.A_DIM)) | styles.get(span[3], 0)
-            window.addstr(y, start, part, attr)
+            window.addstr(y, x + start, part, attr)
     if line.shared_power:
         start, length, emphasis = line.shared_power
         part = str(WideString(text)[start : start + length])
@@ -61,12 +61,12 @@ def draw_line(window, y, line, width, styles):
         if emphasis:
             attr = (attr & ~(curses.A_BOLD | curses.A_DIM)) | styles.get(emphasis, 0)
         if part:
-            window.addstr(y, start, part, attr)
-    x = 0
+            window.addstr(y, x + start, part, attr)
+    column = x
     for char in text:
         if char in '│|':
-            window.addstr(y, x, char, styles['border'])
-        x += len(WideString(char))
+            window.addstr(y, column, char, styles['border'])
+        column += len(WideString(char))
 
 
 def ascii_text(text):
@@ -287,6 +287,13 @@ class Dashboard(Actions, ProcessViews):
         self.backend = None
         self.notice = ''
         self.confirm = None
+        self.confirm_choice = True
+        self.confirm_visible = True
+        self.dialog_lines = []
+        self.dialog_position = (0, 0)
+        self.dialog_buttons = []
+        self.dialog_pressed = None
+        self.modal_page_size = 1
         self.selected_process = None
         self.rendered = []
 
@@ -420,11 +427,12 @@ class Dashboard(Actions, ProcessViews):
         if paginate and getattr(self, '_terminal_size', None) != (width, height):
             self.follow_selection = self.selection_active
             self._terminal_size = (width, height)
+            self.dialog_pressed = None
         if self.view != 'main' and not self.help:
             result = self.page_lines(frame, width, height)
         else:
             result = self._lines(frame, width, height, error, paginate=paginate)
-            if paginate and not self.help and not self.confirm:
+            if paginate and not self.help:
                 self.screen_limit = max(0, len(result) - height)
                 viewport = max(1, height - (1 if self.screen_limit else 0))
                 self.screen_limit = max(0, len(result) - viewport)
@@ -460,29 +468,7 @@ class Dashboard(Actions, ProcessViews):
                     self.modal_offset : self.modal_offset + max(1, height - 3)
                 ]
             ]
-        elif self.confirm:
-            targets = self.confirm.get('_targets', [self.confirm])
-            result = [
-                Line(
-                    ' Send ' + self.confirm.get('_signal', 'SIGTERM') + ' to these processes?',
-                    'warning',
-                )
-            ]
-            self.modal_limit = max(0, len(targets) - height + 3)
-            result += [
-                Line(
-                    ' PID {} · {} · {}'.format(
-                        p['pid'],
-                        p.get('user', '?'),
-                        p.get('device', ','.join(p.get('devices', []))),
-                    )
-                )
-                for p in targets[self.modal_offset : self.modal_offset + max(1, height - 3)]
-            ]
-            if self.modal_limit:
-                result += [Line(f' {len(targets)} targets · arrows/PgUp/PgDn scroll', 'muted')]
-            result += [Line(' y confirm · Esc/n cancel', 'warning')]
-        elif self.notice and not self.help:
+        elif self.notice and not self.help and not self.confirm:
             result = (
                 result[: max(0, height - 2)] + [Line(' ' + self.notice, 'warning')]
                 if paginate
@@ -513,7 +499,94 @@ class Dashboard(Actions, ProcessViews):
                 for line in result
             ]
         self.rendered = [] if self.help else result
+        self.confirmation_dialog(width, height)
         return result
+
+    def confirmation_dialog(self, width, height):
+        """Keep confirmation above the live viewport, never replace its contents."""
+        self.dialog_lines, self.dialog_buttons = [], []
+        if not self.confirm or self.help or getattr(self, 'result_modal', False):
+            return
+        available = max(0, width - 1)
+        box_width = min(64, available - 4 if available >= 40 else available)
+        max_height = min(15, max(0, height - 2))
+        self.confirm_visible = box_width >= 36 and max_height >= 10
+        if not self.confirm_visible:
+            # Do not send a signal when the target and action cannot be shown.
+            self.dialog_lines = [
+                Line(str(WideString(text)[:available]), 'warning')
+                for text in ('Resize to confirm', 'Esc/n cancels')[: max(0, height)]
+            ]
+            self.dialog_position = (0, max(0, (height - len(self.dialog_lines)) // 2))
+            return
+
+        ascii_only = self.args.ascii
+        vertical, horizontal = ('|', '-') if ascii_only else ('│', '─')
+        top = '+' + '-' * (box_width - 2) + '+' if ascii_only else '╒' + '═' * (box_width - 2) + '╕'
+        bottom = '+' + '-' * (box_width - 2) + '+' if ascii_only else '╘' + '═' * (box_width - 2) + '╛'
+
+        def body(text='', style='normal'):
+            text = ''.join(c if c.isprintable() else ' ' for c in str(text))
+            if ascii_only:
+                text = ascii_text(text)
+            text = WideString(text)[: box_width - 4]
+            padding = ' ' * (box_width - 4 - len(text))
+            return Line(vertical + ' ' + str(text) + padding + ' ' + vertical, style)
+
+        targets = self.confirm.get('_targets', [self.confirm])
+        self.modal_page_size = min(6, max_height - 9)
+        self.modal_limit = max(0, len(targets) - self.modal_page_size)
+        self.modal_offset = min(self.modal_offset, self.modal_limit)
+        visible = targets[self.modal_offset : self.modal_offset + self.modal_page_size]
+        lines = [
+            Line(top, 'border'),
+            body('Send ' + self.confirm.get('_signal', 'SIGTERM') + '?', 'warning'),
+            body(),
+        ]
+        for target in visible:
+            lines.append(body('PID {} · {} · NPU {}'.format(
+                target['pid'],
+                target.get('user', '?'),
+                target.get('device', ','.join(target.get('devices', []))),
+            )))
+        status = f'{len(targets)} process' + ('es' if len(targets) != 1 else '') + ' selected'
+        if self.modal_limit:
+            status = (
+                f'{self.modal_offset + 1}-{self.modal_offset + len(visible)}/{len(targets)}'
+                ' targets · Up/Down/PgUp/PgDn'
+            )
+        lines += [body(status, 'muted'), body('y confirm · Esc/n cancel', 'muted')]
+        # Two bounded buttons; Enter activates the focused one, as in nvitop.
+        start = 2 + (box_width - 4 - 32) // 2
+        corners = ('+', '+', '+', '+') if ascii_only else ('┌', '┐', '└', '┘')
+        button_top = corners[0] + horizontal * 13 + corners[1]
+        button_bottom = corners[2] + horizontal * 13 + corners[3]
+        labels = [
+            ('> ' if self.confirm_choice else '  ') + 'Confirm (y)',
+            ('  ' if self.confirm_choice else '> ') + 'Cancel (n)',
+        ]
+        button_y = len(lines)
+        lines.append(body(' ' * (start - 2) + button_top + '  ' + button_top))
+        labels_line = body(
+            ' ' * (start - 2)
+            + '  '.join(vertical + label.ljust(13) + vertical for label in labels)
+        )
+        labels_line.spans = (
+            (start + 1, 13, 'warning' if self.confirm_choice else 'muted'),
+            (start + 18, 13, 'muted' if self.confirm_choice else 'linked'),
+        )
+        lines += [
+            labels_line,
+            body(' ' * (start - 2) + button_bottom + '  ' + button_bottom),
+            Line(bottom, 'border'),
+        ]
+        x, y = (available - box_width) // 2, (height - len(lines)) // 2
+        self.dialog_position = (x, y)
+        self.dialog_lines = lines
+        self.dialog_buttons = [
+            (x + start, y + button_y, 15, 3, True),
+            (x + start + 17, y + button_y, 15, 3, False),
+        ]
 
     def report(self, frame, width=115, error=None):
         """A complete text snapshot, with no terminal pagination or scrolling."""
@@ -1227,6 +1300,7 @@ class Dashboard(Actions, ProcessViews):
                     't: process tree; Enter: process metrics; e: environment; Esc/q: back',
                     'Space: tag/untag process; tagged processes receive batch actions',
                     'k/K: SIGKILL; T: SIGTERM; I/Ctrl-C: SIGINT; y confirms, Esc/n cancels',
+                    'Confirmation dialog: Tab/Left/Right selects a button; Enter or click activates',
                     '--readonly disables all signals; PID identity is checked again before delivery',
                     's/./,: sort column; /: reverse; on/ou/op/og/oc/om/ot: direct sort',
                     'Uppercase second sort key reverses direction; os: unavailable process NPU utilization',
@@ -1384,9 +1458,19 @@ def run_dashboard(sampler, args):
             ):
                 window.erase()
                 lines = dashboard.lines(frame, width, height, sampler.error)
+                background_styles = (
+                    {name: (attr & ~curses.A_BOLD) | curses.A_DIM for name, attr in styles.items()}
+                    if dashboard.dialog_lines else styles
+                )
                 for y, line in enumerate(lines[:height]):
                     try:
-                        draw_line(window, y, line, width, styles)
+                        draw_line(window, y, line, width, background_styles)
+                    except curses.error:
+                        pass
+                x, top = dashboard.dialog_position
+                for offset, line in enumerate(dashboard.dialog_lines):
+                    try:
+                        draw_line(window, top + offset, line, width, styles, x=x)
                     except curses.error:
                         pass
                 window.noutrefresh()

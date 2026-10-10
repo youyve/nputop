@@ -39,7 +39,31 @@ class Actions:
         return self.handle(key, frame, sampler)
 
     def mouse(self, x, y, buttons, frame, sampler):
-        if self.help or self.confirm or getattr(self, 'result_modal', False):
+        if self.help or getattr(self, 'result_modal', False):
+            return True
+        if self.confirm:
+            up, down = getattr(curses, 'BUTTON4_PRESSED', 0), getattr(curses, 'BUTTON5_PRESSED', 0)
+            if buttons & (up | down):
+                return self.handle(
+                    curses.KEY_UP if buttons & up else curses.KEY_DOWN, frame, sampler
+                )
+            choice = next(
+                (action for left, top, width, height, action in self.dialog_buttons
+                 if left <= x < left + width and top <= y < top + height),
+                None,
+            )
+            if buttons & (curses.BUTTON1_CLICKED | curses.BUTTON1_DOUBLE_CLICKED):
+                self.dialog_pressed = None
+                if choice is not None:
+                    return self.handle(ord('y') if choice else ord('n'), frame, sampler)
+            elif buttons & curses.BUTTON1_PRESSED:
+                self.dialog_pressed = choice
+                if choice is not None:
+                    self.confirm_choice = choice
+            elif buttons & curses.BUTTON1_RELEASED:
+                pressed, self.dialog_pressed = self.dialog_pressed, None
+                if choice is not None and pressed == choice:
+                    return self.handle(ord('y') if choice else ord('n'), frame, sampler)
             return True
         line = self.rendered[y] if 0 <= y < len(self.rendered) else None
         target = line.target if line and 0 <= x < len(WideString(line.text)) else None
@@ -138,6 +162,10 @@ class Actions:
 
     def handle(self, key, frame, sampler):
         if key in (-1, curses.KEY_RESIZE):
+            if key == curses.KEY_RESIZE and self.confirm:
+                self.dialog_buttons = []
+                self.dialog_pressed = None
+                self.confirm_visible = False
             return True
         if self.confirm or getattr(self, 'result_modal', False):
             if key in (
@@ -151,8 +179,8 @@ class Actions:
                 delta = {
                     curses.KEY_UP: -1,
                     curses.KEY_DOWN: 1,
-                    curses.KEY_PPAGE: -self.page_size,
-                    curses.KEY_NPAGE: self.page_size,
+                    curses.KEY_PPAGE: -(self.modal_page_size if self.confirm else self.page_size),
+                    curses.KEY_NPAGE: self.modal_page_size if self.confirm else self.page_size,
                     curses.KEY_HOME: -1000000,
                     curses.KEY_END: 1000000,
                 }[key]
@@ -174,9 +202,15 @@ class Actions:
             except curses.error:
                 return True
         if self.confirm is not None:
+            if key in (9, curses.KEY_BTAB, curses.KEY_LEFT, curses.KEY_RIGHT):
+                self.confirm_choice = not self.confirm_choice
+                return True
+            if key in (10, 13, curses.KEY_ENTER):
+                key = ord('y') if self.confirm_choice else ord('n')
             if key in (ord('y'), ord('Y')):
-                target, self.confirm = self.confirm, None
-                self.send_confirmed(target, frame, sampler)
+                if self.confirm_visible:
+                    target, self.confirm = self.confirm, None
+                    self.send_confirmed(target, frame, sampler)
             elif key in (27, ord('n'), ord('N'), ord('q'), 3):
                 self.confirm = None
             return True
@@ -233,6 +267,10 @@ class Actions:
                 if targets and all(p.get('signal_allowed') is True for p in targets):
                     targets = list({identity(p): dict(p) for p in targets}.values())
                     self.modal_offset = 0
+                    self.confirm_choice = True
+                    self.confirm_visible = True
+                    self.dialog_buttons = []
+                    self.dialog_pressed = None
                     self.confirm = dict(
                         targets[0],
                         _targets=targets,

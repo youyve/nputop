@@ -97,3 +97,20 @@ def test_standalone_escape_clears_selection_without_waiting_for_idle_redraw(monk
     assert draws[0][1] is True
     cleared = [when for when, selected in draws if not selected]
     assert cleared and cleared[0] <= 100.1
+
+
+def test_confirmation_draws_after_background_without_stalling_polling(monkeypatch):
+    def event(step, sampler, *args):
+        if step == 2:
+            for process in sampler.frame['processes']:
+                process.update(signal_allowed=True, pid_namespace='host')
+            return ord('k')
+        return 27 if step == 6 else -1
+
+    draws, sampler = run_loop(monkeypatch, ticks=12, event=event, selected=True)
+    calls = ui.draw_line.call_args_list
+    overlays = [call for call in calls if 'x' in call[1]]
+    assert any('Send SIGKILL?' in call[0][2].text for call in overlays)
+    assert any(call[0][4]['normal'] & curses.A_DIM for call in calls if not call[1])
+    assert any(not call[0][4]['normal'] & curses.A_DIM for call in calls if not call[1])
+    assert sampler.poll.call_count == 12 and all(selected for _, selected in draws)

@@ -251,6 +251,7 @@ def test_every_ascii_screen_is_encodable(state):
         frame = None
     error = '驱动失效' if state == 'error' else None
     text = '\n'.join(x.text for x in screen.lines(frame, 160, 60, error))
+    text += '\n'.join(x.text for x in screen.dialog_lines)
     text.encode('ascii')
 
 

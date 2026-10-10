@@ -118,6 +118,7 @@ nputop --readonly
 | 强制结束／终止／中断进程 | `k/K` / `T` / `I` 或 Ctrl-C |
 
 发送信号前必须选中或标记目标，并经过确认。
+确认框居中覆盖于当前页面：`y` 确认、`Esc/n` 取消；也可点击按钮，或用 Tab/←→ 选择后按 Enter。
 与 nvitop 一致，`k/K` 请求 SIGKILL；移动选择请用 ↑↓ 或 Alt-k / Alt-j。
 TUI 内 Ctrl-C 请求 SIGINT；退出请用 `q`。
 

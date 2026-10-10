@@ -9,12 +9,18 @@
   stay serial and missed samples are not queued. Explicit intervals, error retry
   backoff, worker timeouts and backend selection remain supported. Legacy UI and
   public collection API defaults are unchanged.
+- Show process signal confirmation in a centered overlay over the live view.
+  Support mouse buttons and keyboard focus while keeping existing signal checks;
+  cancel preserves selection and scroll position. Very small terminals require
+  resizing before confirmation.
 
 ### 中文
 
 - 新界面默认以一秒为采样目标间隔，从请求发出时计时，不再于采集完成后额外等待
   完整间隔。慢查询保持串行，不积压补采任务；保留显式间隔、错误重试退避、超时和
   后端选择机制。旧界面及公共采集 API 的默认值保持不变。
+- 进程信号确认改为覆盖实时页面的居中弹窗，支持鼠标按钮及键盘切换焦点，继续使用
+  原有信号校验。取消后保留选中状态和滚动位置；终端过小时需放大后才能确认。
 
 ## 0.1.0
 

@@ -561,7 +561,8 @@ def test_terminate_confirmation_survives_idle_and_signals_only_test_child(monkey
             screen.handle(-1, frame, sampler)
         screen.handle(curses.KEY_RESIZE, frame, sampler)
         assert screen.confirm['pid'] == child.pid
-        assert 'y confirm' in '\n'.join(x.text for x in screen.lines(frame, 160, 60))
+        screen.lines(frame, 160, 60)
+        assert 'y confirm' in '\n'.join(x.text for x in screen.dialog_lines)
         assert child.poll() is None
         screen.handle(ord('y'), frame, sampler)
         assert child.wait(timeout=3) == -15

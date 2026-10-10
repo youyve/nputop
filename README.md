@@ -119,6 +119,8 @@ sample; use `nputop --interval 1` for a shorter wait with that release.
 | Kill / terminate / interrupt | `k/K` / `T` / `I` or Ctrl-C |
 
 Process signals require a selected or marked target and confirmation.
+The centered dialog keeps the current view visible: `y` confirms, `Esc/n` cancels;
+click a button or use Tab/←→ and Enter.
 As in nvitop, `k/K` requests SIGKILL; use ↑↓ or Alt-k / Alt-j to move the selection.
 Ctrl-C requests SIGINT inside the TUI; use `q` to quit.
 
