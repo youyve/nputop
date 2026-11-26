@@ -8,6 +8,7 @@ are plain serializable values; drawing a frame can never call the driver.
 from __future__ import annotations
 
 import copy
+import errno
 import math
 import multiprocessing
 from multiprocessing.connection import wait as wait_connections
@@ -28,6 +29,7 @@ from nputop.api.power import power_reference
 
 ERROR_STATES = {-8002: 'permission', -8006: 'timeout', -8013: 'unsupported', -8255: 'unsupported'}
 _INITIAL_PID_NAMESPACE = 'pid:[4026531836]'
+CONTAINER_PID_SCOPES = {'dcmi-container': 'container', 'host-procfs': 'host'}
 
 
 def numeric(value):
@@ -108,6 +110,60 @@ def _process_sample_tick():
 def _process_start_tick(proc):
     # stat 的 comm 字段可以包含空格和括号，starttime 是第 22 个字段。
     return int((proc / 'stat').read_text().rsplit(')', 1)[1].split()[19])
+
+
+def _container_local_pid(proc, pid, namespace, source):
+    pids = _pid_chain(proc / 'status')
+    if source == 'dcmi-container':
+        return pid if pids == (pid,) else None
+    if len(pids) > 1 and pids[0] == pid and os.readlink(str(proc / 'ns' / 'pid')) == namespace:
+        return pids[-1]
+    return None
+
+
+def send_container_signal(target, sig):
+    """重新验证进程后，向当前 PID 命名空间中的目标发送信号。"""
+    pid, local_pid = target['pid'], target.get('local_pid')
+    start_tick = target.get('start_tick')
+    source = target.get('pid_source')
+    scope = CONTAINER_PID_SCOPES.get(source)
+    namespace, verified_source = _process_pid_view(None, scope)
+    if (
+        namespace is None
+        or namespace != target.get('pid_namespace')
+        or verified_source != source
+        or type(pid) is not int
+        or pid <= 0
+        or type(local_pid) is not int
+        or local_pid <= 0
+        or start_tick is None
+    ):
+        raise RuntimeError('无法验证当前 PID 命名空间和目标进程。')
+
+    fd = os.open('/proc/{}'.format(pid), os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        # 通过打开的目录验证同一个进程，避免路径被复用时重新打开另一进程。
+        proc = Path('/proc/self/fd', str(fd))
+        if _container_local_pid(proc, pid, namespace, source) != local_pid:
+            raise RuntimeError('目标进程的 PID 映射已变化。')
+        if _process_start_tick(proc) != start_tick:
+            raise RuntimeError('进程已退出或 PID 已复用。')
+        pidfd_send_signal = getattr(signal, 'pidfd_send_signal', None)
+        if pidfd_send_signal is not None:
+            try:
+                pidfd_send_signal(fd, sig)
+                return
+            except OSError as exc:
+                if exc.errno != errno.ENOSYS:
+                    raise
+                if _process_start_tick(proc) != start_tick:
+                    raise RuntimeError('进程已退出或 PID 已复用。') from exc
+        # 旧内核只能按数字 PID 发送。上面的检查紧邻发送，也保留内核的权限检查。
+        os.kill(local_pid, sig)
+    except (ValueError, IndexError) as exc:
+        raise RuntimeError('无法读取目标进程的身份。') from exc
+    finally:
+        os.close(fd)
 
 
 def _unknown_process(state, reason):
@@ -716,6 +772,7 @@ class BackendManager:
                 pid_namespace=None,
                 pid_source=None,
                 signal_allowed=False,
+                start_tick=None,
                 user='?',
                 created=None,
                 cpu=None,
@@ -741,7 +798,9 @@ class BackendManager:
             row.update(details[key])
             if row['host_state'] == 'ok':
                 alive.add(key)
-                row['signal_allowed'] = host_namespace == namespace
+                row['signal_allowed'] = host_namespace == namespace or (
+                    source in CONTAINER_PID_SCOPES and row['start_tick'] is not None
+                )
         self.process_cache = {key: self.process_cache[key] for key in alive}
 
     def _read_process(self, pid, namespace, source, sample_tick):
@@ -758,18 +817,8 @@ class BackendManager:
             if source != 'initial-procfs':
                 if start_tick is None:
                     return _unknown_process('unavailable', 'procfs-identity-unavailable')
-                pids = _pid_chain(proc / 'status')
-                if source == 'dcmi-container':
-                    in_namespace = pids == (pid,)
-                else:
-                    in_namespace = (
-                        len(pids) > 1
-                        and pids[0] == pid
-                        and os.readlink(str(proc / 'ns' / 'pid')) == namespace
-                    )
-                    if in_namespace:
-                        local_pid = pids[-1]
-                if not in_namespace:
+                local_pid = _container_local_pid(proc, pid, namespace, source)
+                if local_pid is None:
                     return _unknown_process('namespace-unverified', 'target-namespace-mismatch')
             process = self.process_cache.get(key)
             if process is None or not process.is_running():
@@ -785,6 +834,7 @@ class BackendManager:
                     'host_memory': process.memory_percent(),
                     'host_rss': process.memory_info().rss,
                     'created': created,
+                    'start_tick': start_tick,
                     'time': max(0, time.time() - created),
                     'command': clean(' '.join(process.cmdline()) or process.name()),
                     'host_state': 'ok',

@@ -472,7 +472,9 @@ class Dashboard(Actions, ProcessViews):
             result += [
                 Line(
                     ' PID {} · {} · {}'.format(
-                        p['pid'],
+                        f"{p['local_pid']} ({p['pid']}@host)"
+                        if p.get('local_pid') not in (None, p['pid'])
+                        else p['pid'],
                         p.get('user', '?'),
                         p.get('device', ','.join(p.get('devices', []))),
                     )

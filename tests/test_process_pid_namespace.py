@@ -1,5 +1,7 @@
 import ctypes
 import curses
+import errno
+import signal
 from pathlib import Path
 from unittest.mock import MagicMock, Mock
 
@@ -54,7 +56,7 @@ def proc_view(monkeypatch):
     return files, links, lookup
 
 
-def test_dcmi_container_processes_are_enriched_and_read_only(proc_view):
+def test_dcmi_container_processes_are_enriched_and_can_be_signaled(proc_view):
     _, links, lookup = proc_view
     rows = [
         dict(device='5:0', pid=101, memory=128),
@@ -73,7 +75,7 @@ def test_dcmi_container_processes_are_enriched_and_read_only(proc_view):
     assert row['driver_pid'] == row['local_pid'] == row['pid'] == 101
     assert row['pid_namespace'] == links['/proc/self/ns/pid']
     assert row['pid_source'] == 'dcmi-container'
-    assert all(p['signal_allowed'] is False for p in rows)
+    assert all(p['signal_allowed'] is True and p['start_tick'] == 50 for p in rows)
 
     frame = dict(fake_frame(), processes=rows)
     report = monitor.diagnostic_report(frame)
@@ -84,7 +86,7 @@ def test_dcmi_container_processes_are_enriched_and_read_only(proc_view):
     screen.focus = 'processes'
     screen.handle(curses.KEY_HOME, frame, Mock())
     screen.handle(ord('T'), frame, Mock())
-    assert screen.confirm is None
+    assert screen.confirm['_targets'][0]['local_pid'] == 101
 
 
 @pytest.mark.parametrize(
@@ -128,7 +130,7 @@ def test_host_procfs_maps_only_processes_in_current_namespace(proc_view, same_na
     monitor.BackendManager()._enrich_processes([row], 'host', 100)
 
     assert row['driver_pid'] == row['pid'] == 101
-    assert row['signal_allowed'] is False
+    assert row['signal_allowed'] is same_namespace
     if same_namespace:
         lookup.assert_called_once_with(101)
         assert row['local_pid'] == 42
@@ -198,3 +200,107 @@ def test_verified_initial_namespace_keeps_signal_eligibility(proc_view, scope):
     lookup.assert_called_once_with(101)
     assert row['pid_namespace'] == monitor._INITIAL_PID_NAMESPACE
     assert row['created'] is not None and row['signal_allowed'] is True
+
+
+@pytest.fixture
+def signal_target(monkeypatch, proc_view):
+    files, links, _ = proc_view
+    fd = 123
+    open_dir = Mock(return_value=fd)
+    close_dir = Mock()
+    kill = Mock()
+    monkeypatch.setattr(monitor.os, 'open', open_dir)
+    monkeypatch.setattr(monitor.os, 'close', close_dir)
+    monkeypatch.setattr(monitor.os, 'kill', kill)
+    proc = '/proc/self/fd/{}'.format(fd)
+    files[proc + '/stat'] = files['/proc/101/stat']
+    files[proc + '/status'] = files['/proc/101/status']
+    pidfd_send_signal = Mock()
+    monkeypatch.setattr(monitor.signal, 'pidfd_send_signal', pidfd_send_signal, raising=False)
+    row = dict(device='5:0', pid=101, memory=128)
+    return row, files, links, proc, open_dir, close_dir, kill, pidfd_send_signal
+
+
+@pytest.mark.parametrize('pidfd', ['supported', 'missing', 'enosys'])
+def test_signal_uses_verified_local_pid_when_procfs_uses_host_pids(
+    monkeypatch, signal_target, pidfd
+):
+    row, files, links, proc, open_dir, close_dir, kill, pidfd_send_signal = signal_target
+    files['/proc/self/status'] = 'NSpid:\t800\t5\n'
+    status = 'NSpid:\t101\t42\n'
+    files['/proc/101/status'] = files[proc + '/status'] = status
+    links['/proc/1/ns/pid'] = monitor._INITIAL_PID_NAMESPACE
+    links['/proc/101/ns/pid'] = links[proc + '/ns/pid'] = links['/proc/self/ns/pid']
+    if pidfd == 'missing':
+        monkeypatch.delattr(monitor.signal, 'pidfd_send_signal')
+    elif pidfd == 'enosys':
+        pidfd_send_signal.side_effect = OSError(errno.ENOSYS, '系统调用不可用')
+    monitor.BackendManager()._enrich_processes([row], 'host', 100)
+    screen = Dashboard(options())
+    screen.focus = 'processes'
+    frame = dict(fake_frame(), processes=[row])
+    sampler = Mock(error=None)
+    screen.handle(curses.KEY_HOME, frame, sampler)
+    screen.handle(ord('T'), frame, sampler)
+    assert screen.confirm is not None
+    screen.handle(ord('y'), frame, sampler)
+
+    assert open_dir.call_args[0][0] == '/proc/101'
+    close_dir.assert_called_once()
+    if pidfd != 'missing':
+        pidfd_send_signal.assert_called_once_with(open_dir.return_value, signal.SIGTERM)
+    if pidfd == 'supported':
+        kill.assert_not_called()
+    else:
+        kill.assert_called_once_with(42, signal.SIGTERM)
+    assert 'PID 42' in screen.notice
+
+
+@pytest.mark.parametrize('change', ['snapshot', 'namespace', 'mapping', 'start-tick', 'permission'])
+def test_container_signal_rechecks_identity_at_confirmation(signal_target, change):
+    row, files, links, proc, open_dir, close_dir, kill, pidfd_send_signal = signal_target
+    monitor.BackendManager()._enrich_processes([row], 'container', 100)
+    screen = Dashboard(options())
+    frame = dict(fake_frame(), processes=[row])
+    sampler = Mock(error=None)
+    screen.focus = 'processes'
+    screen.handle(curses.KEY_HOME, frame, sampler)
+    screen.handle(ord('T'), frame, sampler)
+    assert screen.confirm is not None
+    if change == 'snapshot':
+        row['local_pid'] += 1
+    elif change == 'namespace':
+        links['/proc/self/ns/pid'] = 'pid:[4026549309]'
+    elif change == 'mapping':
+        files[proc + '/status'] = 'NSpid:\t101\t42\n'
+    elif change == 'start-tick':
+        files[proc + '/stat'] = files[proc + '/stat'].rsplit(' ', 1)[0] + ' 51'
+    elif change == 'permission':
+        pidfd_send_signal.side_effect = PermissionError(errno.EPERM, '没有权限')
+    screen.handle(ord('y'), frame, sampler)
+    kill.assert_not_called()
+    if change == 'permission':
+        pidfd_send_signal.assert_called_once()
+    else:
+        pidfd_send_signal.assert_not_called()
+    if change in ('snapshot', 'namespace'):
+        open_dir.assert_not_called()
+        close_dir.assert_not_called()
+    else:
+        close_dir.assert_called_once_with(open_dir.return_value)
+
+
+def test_container_signals_respect_readonly(signal_target):
+    row, _, _, _, open_dir, _, kill, pidfd_send_signal = signal_target
+    monitor.BackendManager()._enrich_processes([row], 'container', 100)
+    screen = Dashboard(options(readonly=True))
+    frame = dict(fake_frame(), processes=[row])
+    sampler = Mock(error=None)
+    screen.focus = 'processes'
+    screen.handle(curses.KEY_HOME, frame, sampler)
+    screen.handle(ord('T'), frame, sampler)
+    assert screen.confirm is None
+    screen.send_confirmed(row, frame, sampler)
+    open_dir.assert_not_called()
+    pidfd_send_signal.assert_not_called()
+    kill.assert_not_called()
