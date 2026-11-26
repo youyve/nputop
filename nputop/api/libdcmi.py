@@ -448,6 +448,7 @@ class DcmiBackend:
                 ctypes.c_int,
                 ctypes.POINTER(_DvppRatio),
             ],
+            "dmanage_get_container_flag": [ctypes.POINTER(ctypes.c_uint)],
             "dcmi_get_device_resource_info": [
                 ctypes.c_int,
                 ctypes.c_int,
@@ -922,6 +923,13 @@ class DcmiBackend:
         value = ctypes.c_int(-1)
         ret = self._call("dcmi_mcu_get_power_info", ref.card_id, ctypes.byref(value))
         return int(value.value) * 100 if ret == DCMI_OK and value.value >= 0 else NA
+
+    def process_pid_scope(self) -> str | None:
+        """从 DCMI 所用驱动读取 PID 范围。"""
+        flag = ctypes.c_uint(2)
+        if self._call("dmanage_get_container_flag", ctypes.byref(flag)) != DCMI_OK:
+            return None
+        return {0: 'host', 1: 'container'}.get(flag.value)
 
     def process_info(self, index: int, *, strict=False) -> tuple[ProcessInfo, ...]:
         ref = self._device(index)

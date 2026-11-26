@@ -17,6 +17,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 
 import psutil
@@ -26,6 +27,7 @@ from nputop.api.cann import cann_version as cann_version, detect_cann_version
 from nputop.api.power import power_reference
 
 ERROR_STATES = {-8002: 'permission', -8006: 'timeout', -8013: 'unsupported', -8255: 'unsupported'}
+_INITIAL_PID_NAMESPACE = 'pid:[4026531836]'
 
 
 def numeric(value):
@@ -36,6 +38,14 @@ def clean(value):
     if isinstance(value, str):
         return ''.join(c if c.isprintable() else ' ' for c in value).strip()
     return str(value)
+
+
+def _pid_chain(status_path):
+    for line in status_path.read_text().splitlines():
+        if line.startswith('NSpid:'):
+            pids = tuple(map(int, line.split(':', 1)[1].split()))
+            return pids if pids and min(pids) > 0 else ()
+    return ()
 
 
 def host_pid_namespace():
@@ -50,15 +60,76 @@ def host_pid_namespace():
         if getattr(psutil, 'PROCFS_PATH', '/proc') != '/proc':
             return None
         token = os.readlink('/proc/self/ns/pid')
-        if token != 'pid:[4026531836]':
+        if token != _INITIAL_PID_NAMESPACE:
             return None
-        status = Path('/proc/self/status').read_text()
-        match = re.search(r'^NSpid:\s*(.+)$', status, re.M)
-        if not match or [int(v) for v in match.group(1).split()] != [os.getpid()]:
+        if _pid_chain(Path('/proc/self/status')) != (os.getpid(),):
             return None
         return token
     except (OSError, ValueError):
         return None
+
+
+def _process_pid_view(host_namespace, driver_scope):
+    """根据驱动返回的 PID 范围验证当前 /proc 视图。"""
+    if driver_scope == 'changed':
+        return None, 'driver-pid-scope-changed'
+    if host_namespace is not None and driver_scope != 'container':
+        return host_namespace, 'initial-procfs'
+    if driver_scope is None:
+        return None, 'driver-pid-scope-unknown'
+    if getattr(psutil, 'PROCFS_PATH', '/proc') != '/proc':
+        return None, 'procfs-unverified'
+    try:
+        namespace = os.readlink('/proc/self/ns/pid')
+        pids = _pid_chain(Path('/proc/self/status'))
+        if driver_scope == 'container' and pids == (os.getpid(),):
+            return namespace, 'dcmi-container'
+        if (
+            driver_scope == 'host'
+            and len(pids) > 1
+            and pids[-1] == os.getpid()
+            and os.readlink('/proc/1/ns/pid') == _INITIAL_PID_NAMESPACE
+        ):
+            return namespace, 'host-procfs'
+    except PermissionError:
+        return None, 'procfs-permission'
+    except (OSError, ValueError):
+        pass
+    return None, 'host-procfs-unavailable' if driver_scope == 'host' else 'procfs-unverified'
+
+
+def _process_sample_tick():
+    try:
+        return int(time.clock_gettime(time.CLOCK_BOOTTIME) * os.sysconf('SC_CLK_TCK'))
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
+def _process_start_tick(proc):
+    # stat 的 comm 字段可以包含空格和括号，starttime 是第 22 个字段。
+    return int((proc / 'stat').read_text().rsplit(')', 1)[1].split()[19])
+
+
+def _unknown_process(state, reason):
+    messages = {
+        'driver-pid-scope-unknown': '驱动 PID 范围未知',
+        'driver-pid-scope-changed': '驱动 PID 范围在采样期间变更',
+        'duplicate-driver-pid': '此设备报告了重复的 PID',
+        'host-procfs-unavailable': '无法读取初始 PID 命名空间的 procfs',
+        'procfs-unverified': '无法验证 procfs 的 PID 命名空间',
+        'procfs-permission': '没有权限读取 procfs',
+        'unverified-npu-memory': 'DCMI 未确认本地进程的显存占用',
+        'target-namespace-mismatch': '进程不在已验证的 PID 命名空间内',
+        'permission': '没有权限读取进程信息',
+        'process-exited-or-hidden': '进程已退出或在当前环境不可见',
+        'identity-changed': '进程在采样期间启动或 PID 被复用',
+        'procfs-identity-unavailable': '无法从 procfs 确认进程身份',
+    }
+    return {
+        'command': '[' + messages[reason] + ']',
+        'host_state': state,
+        'host_reason': reason,
+    }
 
 
 def known_virtual_machine():
@@ -215,6 +286,7 @@ class DcmiAdapter(MetricStore):
         devices, processes, errors = [], [], []
         card_power = {}
         self.dcmi.hbm_cache.clear()
+        scope = self.dcmi.process_pid_scope()
         for metadata in self.inventory:
             row = dict(metadata)
             i = row['id']
@@ -284,9 +356,12 @@ class DcmiAdapter(MetricStore):
                 ):
                     row['details'][name] = copy.deepcopy(metrics[name])
             devices.append(row)
+        if processes and scope is not None and self.dcmi.process_pid_scope() != scope:
+            scope = 'changed'
         return {
             'devices': devices,
             'processes': processes,
+            '_process_pid_scope': scope,
             'errors': errors,
             'process_status': 'ok' if not errors else ('partial' if processes else 'unavailable'),
         }
@@ -524,7 +599,13 @@ class BackendManager:
 
     def _create(self, name, detail):
         adapter = self.factories[name]()
-        return adapter, adapter.sample(detail)
+        return adapter, self._sample(adapter, detail)
+
+    def _sample(self, adapter, detail):
+        sample_tick = _process_sample_tick()
+        frame = adapter.sample(detail)
+        frame['_process_sample_tick'] = sample_tick
+        return frame
 
     def collect(self, detail=None):
         start = time.monotonic()
@@ -552,7 +633,7 @@ class BackendManager:
                     self.reason += f'; SMI unavailable: {fallback_exc}'
         else:
             try:
-                frame = self.adapter.sample(detail)
+                frame = self._sample(self.adapter, detail)
             except Exception:
                 self.failures += 1
                 if (
@@ -592,7 +673,11 @@ class BackendManager:
         return self._finish(frame, start)
 
     def _finish(self, frame, start):
-        self._enrich_processes(frame['processes'])
+        self._enrich_processes(
+            frame['processes'],
+            frame.pop('_process_pid_scope', None),
+            frame.pop('_process_sample_tick', None),
+        )
         vm, swap = psutil.virtual_memory(), psutil.swap_memory()
         frame.update(
             backend=self.adapter.name,
@@ -617,57 +702,106 @@ class BackendManager:
         )
         return frame
 
-    def _enrich_processes(self, rows):
-        namespace = host_pid_namespace()
+    def _enrich_processes(self, rows, driver_scope=None, sample_tick=None):
+        host_namespace = host_pid_namespace()
+        namespace, source = _process_pid_view(host_namespace, driver_scope) if rows else (None, None)
+        duplicates = Counter((row.get('device'), row['pid']) for row in rows)
         alive = set()
         details = {}
         for row in rows:
             pid = row['pid']
-            row.update(driver_pid=pid, pid_namespace=namespace, signal_allowed=False)
+            row.update(
+                driver_pid=pid,
+                local_pid=None,
+                pid_namespace=None,
+                pid_source=None,
+                signal_allowed=False,
+                user='?',
+                created=None,
+                cpu=None,
+                host_memory=None,
+                host_rss=None,
+                time=None,
+            )
             if namespace is None:
-                row.update(
-                    user='?',
-                    created=None,
-                    cpu=None,
-                    host_memory=None,
-                    command='[PID namespace unverified; read-only]',
-                    host_state='namespace-unverified',
-                )
+                row.update(_unknown_process('namespace-unverified', source))
                 continue
-            alive.add(pid)
-            if pid not in details:
-                try:
-                    process = self.process_cache.get(pid)
-                    if process is None or not process.is_running():
-                        process = psutil.Process(pid)
-                        self.process_cache[pid] = process
-                    with process.oneshot():
-                        created = process.create_time()
-                        details[pid] = {
-                            'user': process.username(),
-                            'cpu': process.cpu_percent(),
-                            'host_memory': process.memory_percent(),
-                            'host_rss': process.memory_info().rss,
-                            'created': created,
-                            'time': max(0, time.time() - created),
-                            'command': clean(' '.join(process.cmdline()) or process.name()),
-                            'host_state': 'ok',
-                            'signal_allowed': True,
-                        }
-                except psutil.AccessDenied:
-                    details[pid] = {
-                        'user': '?',
-                        'command': '[permission denied]',
-                        'host_state': 'permission',
-                    }
-                except psutil.NoSuchProcess:
-                    details[pid] = {
-                        'user': '?',
-                        'command': '[exited or outside PID namespace]',
-                        'host_state': 'unavailable',
-                    }
-            row.update(details[pid])
-        self.process_cache = {pid: p for pid, p in self.process_cache.items() if pid in alive}
+            if source == 'dcmi-container':
+                if duplicates[row.get('device'), pid] > 1:
+                    row.update(_unknown_process('namespace-unverified', 'duplicate-driver-pid'))
+                    continue
+                # 普通容器模式按调用者 PID 命名空间解析 PID，再查询该进程的显存。
+                # 只有正值才能确认本地同号进程确实使用了这张卡。
+                if (row.get('memory') or 0) <= 0:
+                    row.update(_unknown_process('namespace-unverified', 'unverified-npu-memory'))
+                    continue
+            key = (namespace, source, pid)
+            if key not in details:
+                details[key] = self._read_process(pid, namespace, source, sample_tick)
+            row.update(details[key])
+            if row['host_state'] == 'ok':
+                alive.add(key)
+                row['signal_allowed'] = host_namespace == namespace
+        self.process_cache = {key: self.process_cache[key] for key in alive}
+
+    def _read_process(self, pid, namespace, source, sample_tick):
+        proc = Path('/proc', str(pid))
+        key = (namespace, source, pid)
+        try:
+            start_tick = None
+            local_pid = pid
+            if sample_tick is not None:
+                start_tick = _process_start_tick(proc)
+                # 同一个时钟滴答内无法可靠确定进程启动与驱动采样的先后。
+                if start_tick >= sample_tick:
+                    return _unknown_process('unavailable', 'identity-changed')
+            if source != 'initial-procfs':
+                if start_tick is None:
+                    return _unknown_process('unavailable', 'procfs-identity-unavailable')
+                pids = _pid_chain(proc / 'status')
+                if source == 'dcmi-container':
+                    in_namespace = pids == (pid,)
+                else:
+                    in_namespace = (
+                        len(pids) > 1
+                        and pids[0] == pid
+                        and os.readlink(str(proc / 'ns' / 'pid')) == namespace
+                    )
+                    if in_namespace:
+                        local_pid = pids[-1]
+                if not in_namespace:
+                    return _unknown_process('namespace-unverified', 'target-namespace-mismatch')
+            process = self.process_cache.get(key)
+            if process is None or not process.is_running():
+                process = psutil.Process(pid)
+            with process.oneshot():
+                created = process.create_time()
+                result = {
+                    'local_pid': local_pid,
+                    'pid_namespace': namespace,
+                    'pid_source': source,
+                    'user': process.username(),
+                    'cpu': process.cpu_percent(),
+                    'host_memory': process.memory_percent(),
+                    'host_rss': process.memory_info().rss,
+                    'created': created,
+                    'time': max(0, time.time() - created),
+                    'command': clean(' '.join(process.cmdline()) or process.name()),
+                    'host_state': 'ok',
+                    'host_reason': None,
+                }
+            if not process.is_running() or (
+                start_tick is not None and _process_start_tick(proc) != start_tick
+            ):
+                return _unknown_process('unavailable', 'identity-changed')
+            self.process_cache[key] = process
+            return result
+        except (psutil.AccessDenied, PermissionError):
+            return _unknown_process('permission', 'permission')
+        except (psutil.NoSuchProcess, FileNotFoundError, ProcessLookupError):
+            return _unknown_process('unavailable', 'process-exited-or-hidden')
+        except (OSError, ValueError, IndexError):
+            return _unknown_process('unavailable', 'procfs-identity-unavailable')
 
 
 def _session_worker(connection, mode, ready, worker):
@@ -851,6 +985,10 @@ def diagnostic_report(frame, error=None):
             'schema': 1,
             'error': 'No snapshot available; run --once locally for the full error.',
         }
+    identities = Counter(
+        row.get('host_reason') or row.get('pid_source') or 'unknown'
+        for row in frame.get('processes', ())
+    )
     return {
         'schema': 1,
         'backend': frame['backend'],
@@ -858,6 +996,7 @@ def diagnostic_report(frame, error=None):
         'driver': frame['driver'],
         'cann': frame['cann'],
         'cann_detection': frame.get('cann_detection'),
+        'process_identity': dict(identities),
         'collection_ms': frame['collection_ms'],
         'fallback': bool(frame.get('reason')),
         'error': bool(error),

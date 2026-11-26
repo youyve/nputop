@@ -60,6 +60,14 @@ class ProcessViews:
         if not target.get('created') or not target.get('pid_namespace'):
             self.notice = 'Process identity/namespace is unverified; host inspection unavailable.'
             return
+        if (
+            target.get('pid_source') in ('dcmi-container', 'host-procfs')
+            and not target.get('signal_allowed')
+        ):
+            self.notice = (
+                '[initial-pid-namespace-required]' if self.args.ascii else '进程详情仅支持在初始 PID 命名空间中查看。'
+            )
+            return
         self.view = view
         self.view_target = dict(target)
         self.view_generation += 1

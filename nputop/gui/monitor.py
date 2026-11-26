@@ -1157,8 +1157,15 @@ class Dashboard(Actions, ProcessViews):
         process_offset = 0
         used_rows = 0
         previous_device = None
+        commands = []
+        for process in procs:
+            command = process.get('command', '')
+            if self.args.ascii:
+                reason = process.get('host_reason')
+                command = f'[{reason}]' if reason else ascii_text(command)
+            commands.append(WideString(command))
         self.command_limit = max(
-            (len(WideString(p.get('command', ''))) - max(1, inner - 65) for p in procs), default=0
+            (len(command) - max(1, inner - 65) for command in commands), default=0
         )
         self.command_offset = min(self.command_offset, max(0, self.command_limit))
         for index in range(process_offset, len(procs)):
@@ -1176,8 +1183,7 @@ class Dashboard(Actions, ProcessViews):
             tag = '*' if identity(p) in self.tags else ' '
             prefix = f"{tag}{p['device']:>9} {p['pid']:>8} {fit(p.get('user', '?'), 10)} {size(p['memory']).replace(' ', ''):>9} {cpu:>6} {memory:>5} {elapsed(p.get('time')):>10} "
             # Keep identity columns fixed while exploring long command lines.
-            command_text = p.get('command', '')
-            command = WideString(ascii_text(command_text) if self.args.ascii else command_text)
+            command = commands[index]
             command_width = max(1, inner - len(WideString(prefix)))
             command_offset = min(self.command_offset, max(0, len(command) - command_width))
             text = prefix + str(command[command_offset:])

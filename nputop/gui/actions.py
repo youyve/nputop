@@ -245,9 +245,14 @@ class Actions:
                         ),
                     )
                 elif targets:
-                    self.notice = (
-                        'Cannot signal: process identity/namespace is unverified or inaccessible.'
-                    )
+                    if all(p.get('host_state') == 'ok' for p in targets):
+                        self.notice = (
+                            '[initial-pid-namespace-required]' if self.args.ascii else '仅支持在初始 PID 命名空间中发送信号。'
+                        )
+                    else:
+                        self.notice = (
+                            'Cannot signal: process identity/namespace is unverified or inaccessible.'
+                        )
         elif key in (ord('r'), ord('R'), 18, curses.KEY_F5):
             if self.view == 'main':
                 sampler.refresh()

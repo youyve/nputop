@@ -78,6 +78,12 @@ local PIDs. Signal confirmation rechecks identity, permission and freshness;
 duplicate rows for one process receive one signal. Tree operations target only
 explicit selections, not an entire subtree. `--readonly` blocks all signals.
 
+DCMI 报告普通容器模式时，默认界面可通过同一 PID 命名空间的 `/proc` 补全
+进程的 USER、CPU、MEM、TIME 和 COMMAND。DCMI 返回宿主机 PID 时，如果容器的
+`/proc` 视图来自初始 PID 命名空间，则通过内核的 `NSpid` 和目标命名空间确认归属。
+在隔离 PID 命名空间中，已验证的进程行仅供监控。缺少可信 PID 来源或对应关系时保留
+占位信息。`--diagnose` 按验证结果汇总行数。
+
 Environment contents are read only on page entry or manual refresh and excluded
 from normal snapshots and diagnostic exports. Host inspection uses a separate
 bounded worker so it cannot block NPU collection.
