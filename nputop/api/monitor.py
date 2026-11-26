@@ -22,6 +22,7 @@ from pathlib import Path
 import psutil
 
 from nputop.api import libascend, libdcmi
+from nputop.api.cann import cann_version as cann_version, detect_cann_version
 from nputop.api.power import power_reference
 
 ERROR_STATES = {-8002: 'permission', -8006: 'timeout', -8013: 'unsupported', -8255: 'unsupported'}
@@ -35,23 +36,6 @@ def clean(value):
     if isinstance(value, str):
         return ''.join(c if c.isprintable() else ' ' for c in value).strip()
     return str(value)
-
-
-def cann_version():
-    import platform
-    import re
-
-    arch = {'aarch64': 'aarch64-linux', 'x86_64': 'x86_64-linux'}.get(platform.machine())
-    if arch:
-        try:
-            text = Path(
-                '/usr/local/Ascend/ascend-toolkit/latest', arch, 'ascend_toolkit_install.info'
-            ).read_text()
-            found = re.search(r'^version\s*=\s*(\S+)', text, re.M)
-            return found.group(1) if found else None
-        except OSError:
-            pass
-    return None
 
 
 def host_pid_namespace():
@@ -534,7 +518,7 @@ class BackendManager:
         # A monotonic clock has an unspecified origin (process-relative on
         # older macOS Python). No previous attempt must mean no cooldown.
         self.last_fallback = None
-        self.cann = cann_version()
+        self.cann, self.cann_detection = detect_cann_version()
         self.process_cache = {}
         psutil.cpu_percent()
 
@@ -616,6 +600,7 @@ class BackendManager:
             reason=self.reason,
             driver=self.adapter.driver,
             cann=self.cann,
+            cann_detection=self.cann_detection,
             sampled_at=time.monotonic(),
             collection_ms=round((time.monotonic() - start) * 1000, 2),
             host={
@@ -872,6 +857,7 @@ def diagnostic_report(frame, error=None):
         'requested_backend': frame['requested_backend'],
         'driver': frame['driver'],
         'cann': frame['cann'],
+        'cann_detection': frame.get('cann_detection'),
         'collection_ms': frame['collection_ms'],
         'fallback': bool(frame.get('reason')),
         'error': bool(error),
