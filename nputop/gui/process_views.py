@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 
 from nputop.api.inspection import identity
-from nputop.api.monitor import clean, numeric
+from nputop.api.monitor import CONTAINER_PID_SCOPES, clean, host_pid_namespace, numeric
 from nputop.gui.library.widestring import WideString
 
 
@@ -59,6 +59,14 @@ class ProcessViews:
             return
         if not target.get('created') or not target.get('pid_namespace'):
             self.notice = 'Process identity/namespace is unverified; host inspection unavailable.'
+            return
+        if (
+            target.get('pid_source') in CONTAINER_PID_SCOPES
+            and target['pid_namespace'] != host_pid_namespace()
+        ):
+            self.notice = (
+                '[initial-pid-namespace-required]' if self.args.ascii else '进程详情仅支持在初始 PID 命名空间中查看。'
+            )
             return
         self.view = view
         self.view_target = dict(target)

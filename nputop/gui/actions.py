@@ -10,8 +10,16 @@ import time
 import psutil
 
 from nputop.api.inspection import identity
-from nputop.api.monitor import host_pid_namespace
+from nputop.api.monitor import CONTAINER_PID_SCOPES, host_pid_namespace, send_container_signal
 from nputop.gui.library.widestring import WideString
+
+
+def _signal_identity(row):
+    process = identity(row)
+    source = row.get('pid_source')
+    if source in CONTAINER_PID_SCOPES:
+        return process + (source, row.get('local_pid'), row.get('start_tick'))
+    return process
 
 
 class Actions:
@@ -93,7 +101,8 @@ class Actions:
                 )
                 if not fresh or sampler.error or target.get('created') is None:
                     raise RuntimeError('process snapshot is stale or identity is unavailable')
-                namespace = host_pid_namespace()
+                container = target.get('pid_source') in CONTAINER_PID_SCOPES
+                namespace = target.get('pid_namespace') if container else host_pid_namespace()
                 if (
                     not namespace
                     or target.get('pid_namespace') != namespace
@@ -110,19 +119,29 @@ class Actions:
                     candidates = candidates + self.inspection.get('nodes', [])
                     if self.inspection.get('target'):
                         candidates = candidates + [self.inspection['target']]
+                token = _signal_identity(target)
                 if not any(
-                    identity(p) == identity(target) and p.get('signal_allowed') is True
+                    p.get('signal_allowed') is True and _signal_identity(p) == token
                     for p in candidates
                 ):
                     raise RuntimeError('process exited or current identity is unavailable')
-                process = psutil.Process(target['pid'])
-                if (
-                    abs(process.create_time() - target['created']) > 0.001
-                    or not process.is_running()
-                ):
-                    raise RuntimeError('PID was reused or process exited')
-                process.send_signal(getattr(signal, action))
-                results.append(f"{action} sent to PID {target['pid']}")
+                sig = getattr(signal, action)
+                if container:
+                    send_container_signal(target, sig)
+                    results.append(
+                        f"{action} 已发送到容器 PID {target['local_pid']}"
+                        if not self.args.ascii
+                        else f"{action} -> PID {target['local_pid']}"
+                    )
+                else:
+                    process = psutil.Process(target['pid'])
+                    if (
+                        abs(process.create_time() - target['created']) > 0.001
+                        or not process.is_running()
+                    ):
+                        raise RuntimeError('PID was reused or process exited')
+                    process.send_signal(sig)
+                    results.append(f"{action} sent to PID {target['pid']}")
             except (psutil.Error, RuntimeError, OSError) as exc:
                 results.append(f"PID {target['pid']}: {exc}")
         self.signal_results = results
@@ -231,7 +250,7 @@ class Actions:
                 chosen = self.chosen_process(frame)
                 targets = list(self.tags.values()) if self.tags else [chosen] if chosen else []
                 if targets and all(p.get('signal_allowed') is True for p in targets):
-                    targets = list({identity(p): dict(p) for p in targets}.values())
+                    targets = list({_signal_identity(p): dict(p) for p in targets}.values())
                     self.modal_offset = 0
                     self.confirm = dict(
                         targets[0],

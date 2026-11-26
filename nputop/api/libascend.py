@@ -21,9 +21,9 @@ from collections import namedtuple
 from types import ModuleType
 from typing import Any
 from collections.abc import Callable
-import platform
 
 from nputop.api import libdcmi
+from nputop.api.cann import cann_version
 
 # --------- 常量 ----------
 NA            : str  = "N/A"
@@ -522,20 +522,8 @@ def ascendSystemGetDriverVersion() -> str:
     return _DRIVER_VERSION or NA
 
 def ascendSystemGetCANNVersion() -> str:
-    arch = platform.machine()
-    arch_subdir_map = {"x86_64": "x86_64-linux", "aarch64": "aarch64-linux"}
-    arch_subdir = arch_subdir_map.get(arch)
-    try:
-        result = subprocess.run(['cat', f'/usr/local/Ascend/ascend-toolkit/latest/{arch_subdir}/ascend_toolkit_install.info'], 
-                              capture_output=True, text=True, check=True)
-        output = result.stdout
-        
-        match = re.search(r'version\s*=\s*([\w.+-]+)', output)
-        return match.group(1) if match else NA
-            
-    except (FileNotFoundError, PermissionError):
-        return NA
-    
+    return cann_version() or NA
+
 def ascendDeviceGetPowerLimit(i:int):
     backend = _get_dcmi_backend()
     if backend is not None:
